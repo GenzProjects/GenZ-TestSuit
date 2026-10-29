@@ -1,0 +1,451 @@
+// GenZ-TestSuit-v1.0
+// GenZ-DeepTestSuit phone panel. Compiled only in the Test Environment: the GENZ_DEEP_TEST scripting define is set by
+// GenZ → Test Suit → GenZ-DeepTestSuit → Apply Test Environment and removed by Apply Release Environment, so a
+// release build has none of this. Shake the phone to open the panel, shake again to close it.
+// Every ad button calls the game's own ad scripts (AdsManager, AdMob, AppOpen_Code, …) by name, through reflection,
+// so it's the game's ad code and integration that get tested. The panel never loads or shows an ad itself, and the
+// ad scripts aren't changed. The names come from the config (GenZDeepTest.json), so another game only edits those.
+#if GENZ_DEEP_TEST
+using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Linq;
+using System.Reflection;
+using System.Security.Cryptography;
+using System.Text;
+using GoogleMobileAds.Api;
+using UnityEngine;
+
+namespace GenZ.DeepTest
+{
+    public class GenZDeepTestPanel : MonoBehaviour
+    {
+        // Written by the editor (GenZDeepTestSuit.WriteRuntimeJson from the config's DeepAction); keep the field names in sync.
+        [Serializable] class Action
+        {
+            public string name, load, ready, show, hide, before, showFields, rewardField;
+            public bool requireReady;
+        }
+        [Serializable] class Settings
+        {
+            public bool maxVerbose = true, creativeDebugger = true, admobTestDevice = true;
+            public float shakeThreshold = 2f;
+            public List<Action> actions = new List<Action>();
+            public string[] watch = new string[0];
+        }
+
+        const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Static;
+        static readonly string[] InstanceNames = { "instance", "_instance", "Instance" };
+
+        static Settings settings;
+        static string admobTestDevice = "off";
+
+        readonly Dictionary<Action, string> state = new Dictionary<Action, string>();
+        readonly Dictionary<Action, bool> failed = new Dictionary<Action, bool>();
+        readonly Dictionary<string, Type> types = new Dictionary<string, Type>();
+        readonly List<string> lines = new List<string>();
+        Action rewardFor; // the row whose Show is waiting for the game's reward callback
+        bool open;
+        Vector3 lowPass;
+        float nextToggle;
+        Vector2 scroll;
+        GUIStyle title, label, small, button, box;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        static void Boot()
+        {
+            // Two keys, both set only by Apply Test Environment: the define (this code exists at all) and this file.
+            // A define added by hand, without the Test Environment, gets nothing: no panel, no SDK debug switches.
+            var file = Resources.Load<TextAsset>("GenZDeepTest");
+            if (file == null)
+            {
+                Debug.LogWarning("[GenZ] DeepTest|build|FAIL|GENZ_DEEP_TEST is set but GenZDeepTest.json is missing: no test panel. Use Apply Test Environment.");
+                return;
+            }
+            settings = JsonUtility.FromJson<Settings>(file.text);
+
+            // SDK debug switches only, no ads. BeforeSceneLoad runs before any Awake, so they're set before the game starts the SDKs.
+            if (settings.maxVerbose) MaxSdk.SetVerboseLogging(true);
+            if (settings.creativeDebugger) MaxSdk.SetCreativeDebuggerEnabled(true);
+            if (settings.admobTestDevice) admobTestDevice = RegisterAdMobTestDevice();
+
+            var go = new GameObject("[GenZ DeepTest]");
+            DontDestroyOnLoad(go);
+            go.AddComponent<GenZDeepTestPanel>();
+            Log("build", "INFO", $"Test Environment build ({settings.actions.Count} rows)");
+        }
+
+        // "[GenZ] DeepTest|what|status|detail", the GenZLog format. Never IDs, device IDs or revenue values.
+        static void Log(string what, string status, string detail) => Debug.Log($"[GenZ] DeepTest|{what}|{status}|{detail}");
+
+        /// <summary>
+        /// Every AdMob request from this phone (the game's own, with its real ad unit IDs) gets Google's test ads, so
+        /// tapping them is safe. A global SDK setting: the game's code is unchanged. Returns the state shown in the panel.
+        /// </summary>
+        static string RegisterAdMobTestDevice()
+        {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            try
+            {
+                string androidId;
+                using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+                using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
+                using (var resolver = activity.Call<AndroidJavaObject>("getContentResolver"))
+                using (var secure = new AndroidJavaClass("android.provider.Settings$Secure"))
+                    androidId = secure.CallStatic<string>("getString", resolver, "android_id");
+                if (string.IsNullOrEmpty(androidId)) return "off (no Android ID)";
+
+                // AdMob's test device ID is the upper-case MD5 of the Android ID.
+                string hashed;
+                using (var md5 = MD5.Create())
+                    hashed = BitConverter.ToString(md5.ComputeHash(Encoding.UTF8.GetBytes(androidId))).Replace("-", "");
+                MobileAds.SetRequestConfiguration(new RequestConfiguration { TestDeviceIds = new List<string> { hashed } });
+                Log("AdMobTestDevice", "OK", "this phone gets AdMob test ads");
+                return "on (this phone)";
+            }
+            catch (Exception e)
+            {
+                Log("AdMobTestDevice", "FAIL", e.GetType().Name);
+                return "off (" + e.GetType().Name + ")";
+            }
+#else
+            return "off (Editor)";
+#endif
+        }
+
+        void Awake()
+        {
+            foreach (var a in settings.actions) state[a] = "";
+
+            // Listening only: shows what MAX did after the game's code ran (the game's own handlers run as usual).
+            MaxSdkCallbacks.Interstitial.OnAdLoadedEvent += (id, info) => MaxEvent("Interstitial loaded", info);
+            MaxSdkCallbacks.Interstitial.OnAdLoadFailedEvent += (id, err) => MaxFail("Interstitial load failed", err);
+            MaxSdkCallbacks.Interstitial.OnAdDisplayedEvent += (id, info) => MaxEvent("Interstitial shown", info);
+            MaxSdkCallbacks.Interstitial.OnAdDisplayFailedEvent += (id, err, info) => MaxFail("Interstitial show failed", err);
+            MaxSdkCallbacks.Interstitial.OnAdHiddenEvent += (id, info) => MaxEvent("Interstitial closed", info);
+            MaxSdkCallbacks.Rewarded.OnAdLoadedEvent += (id, info) => MaxEvent("Rewarded loaded", info);
+            MaxSdkCallbacks.Rewarded.OnAdLoadFailedEvent += (id, err) => MaxFail("Rewarded load failed", err);
+            MaxSdkCallbacks.Rewarded.OnAdDisplayedEvent += (id, info) => MaxEvent("Rewarded shown", info);
+            MaxSdkCallbacks.Rewarded.OnAdDisplayFailedEvent += (id, err, info) => MaxFail("Rewarded show failed", err);
+            MaxSdkCallbacks.Rewarded.OnAdReceivedRewardEvent += (id, reward, info) => MaxEvent("Rewarded reward received", info);
+            MaxSdkCallbacks.Rewarded.OnAdHiddenEvent += (id, info) => MaxEvent("Rewarded closed", info);
+            MaxSdkCallbacks.Banner.OnAdLoadedEvent += (id, info) => MaxEvent("Banner loaded", info);
+            MaxSdkCallbacks.Banner.OnAdLoadFailedEvent += (id, err) => MaxFail("Banner load failed", err);
+            MaxSdkCallbacks.MRec.OnAdLoadedEvent += (id, info) => MaxEvent("MREC loaded", info);
+            MaxSdkCallbacks.MRec.OnAdLoadFailedEvent += (id, err) => MaxFail("MREC load failed", err);
+
+            lowPass = Input.acceleration;
+        }
+
+        void MaxEvent(string what, MaxSdkBase.AdInfo info) => Add($"MAX: {what}" + (string.IsNullOrEmpty(info?.NetworkName) ? "" : " · " + info.NetworkName));
+        void MaxFail(string what, MaxSdkBase.ErrorInfo err) => Add($"MAX: {what}: {err?.Code} {err?.Message}");
+
+        // ---------------------------------------------------------------- shake
+
+        void Update()
+        {
+            // A shake: the acceleration jumps away from its smoothed value by more than the threshold (in g).
+            var a = Input.acceleration;
+            lowPass = Vector3.Lerp(lowPass, a, Mathf.Clamp01(Time.unscaledDeltaTime));
+            float t = Mathf.Max(0.5f, settings.shakeThreshold);
+            if ((a - lowPass).sqrMagnitude >= t * t && Time.unscaledTime >= nextToggle) Toggle(a);
+#if UNITY_EDITOR
+            if (Input.GetKeyDown(KeyCode.F9)) Toggle(a); // no accelerometer in the Editor
+#endif
+
+            // Drag to scroll (IMGUI scroll views don't follow a finger).
+            if (open && Input.touchCount == 1 && Input.GetTouch(0).phase == TouchPhase.Moved)
+                scroll.y += Input.GetTouch(0).deltaPosition.y / Scale;
+        }
+
+        void Toggle(Vector3 a)
+        {
+            open = !open;
+            nextToggle = Time.unscaledTime + 1.2f;
+            lowPass = a;
+            Log("panel", "INFO", open ? "opened" : "closed");
+        }
+
+        void Add(string line)
+        {
+            lines.Insert(0, DateTime.Now.ToString("HH:mm:ss ") + line);
+            if (lines.Count > 60) lines.RemoveAt(lines.Count - 1);
+        }
+
+        void Note(Action a, string text, bool fail = false)
+        {
+            state[a] = text;
+            failed[a] = fail;
+            Add($"{a.name}: {text}");
+            Log(a.name.Replace(" ", ""), fail ? "FAIL" : "INFO", text);
+        }
+
+        // ---------------------------------------------------------------- calling the game's ad scripts
+
+        Type FindType(string name)
+        {
+            if (types.TryGetValue(name, out var t)) return t;
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                Type[] all;
+                try { all = asm.GetTypes(); }
+                catch (ReflectionTypeLoadException e) { all = e.Types.Where(x => x != null).ToArray(); }
+                t = all.FirstOrDefault(x => x.Name == name || x.FullName == name);
+                if (t != null) break;
+            }
+            return types[name] = t;
+        }
+
+        /// <summary>The script's live object: its static instance field/property, else the object in the scene.</summary>
+        static object FindInstance(Type type)
+        {
+            foreach (var n in InstanceNames)
+            {
+                var f = type.GetField(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                if (f != null && type.IsAssignableFrom(f.FieldType) && f.GetValue(null) is UnityEngine.Object fo && fo != null) return fo;
+                var p = type.GetProperty(n, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static);
+                if (p != null && type.IsAssignableFrom(p.PropertyType) && p.GetValue(null) is UnityEngine.Object po && po != null) return po;
+            }
+            return typeof(UnityEngine.Object).IsAssignableFrom(type) ? UnityEngine.Object.FindObjectOfType(type, true) : null;
+        }
+
+        /// <summary>Splits "Class.member" and finds the class and the object to call it on (null for a static member).</summary>
+        bool Resolve(string spec, out Type type, out object target, out string member, out string error)
+        {
+            type = null; target = null; member = null; error = null;
+            int dot = spec.LastIndexOf('.');
+            if (dot <= 0) { error = $"\"{spec}\" isn't Class.Member"; return false; }
+            type = FindType(spec.Substring(0, dot));
+            member = spec.Substring(dot + 1);
+            if (type == null) { error = $"no class {spec.Substring(0, dot)} in the build"; return false; }
+            var m = type.GetMember(member, All).FirstOrDefault();
+            if (m == null) { error = $"{type.Name} has no {member}"; return false; }
+            bool isStatic = m is MethodInfo mi ? mi.IsStatic : m is FieldInfo fi ? fi.IsStatic : m is PropertyInfo pi && (pi.GetMethod?.IsStatic ?? false);
+            if (isStatic) return true;
+            target = FindInstance(type);
+            if (target == null) { error = $"no {type.Name} object in the game right now"; return false; }
+            return true;
+        }
+
+        /// <summary>Calls "Class.Method" (any visibility; a reward delegate parameter gets the panel's) or reads "Class.field".</summary>
+        object Call(string spec, Action row)
+        {
+            if (!Resolve(spec, out var type, out var target, out var name, out var error)) throw new GameCallException(error);
+            var method = type.GetMethods(All).Where(m => m.Name == name).OrderBy(m => m.GetParameters().Length).FirstOrDefault();
+            if (method == null) return Read(type, target, name);
+
+            var args = method.GetParameters().Select(p =>
+                typeof(Delegate).IsAssignableFrom(p.ParameterType) ? RewardDelegate(p.ParameterType, row)
+                : p.HasDefaultValue ? p.DefaultValue
+                : p.ParameterType.IsValueType ? Activator.CreateInstance(p.ParameterType) : null).ToArray();
+            try { return method.Invoke(method.IsStatic ? null : target, args); }
+            catch (TargetInvocationException e) { throw e.InnerException ?? e; } // the game's own exception
+        }
+
+        static object Read(Type type, object target, string name)
+        {
+            var f = type.GetField(name, All);
+            if (f != null) return f.GetValue(f.IsStatic ? null : target);
+            var p = type.GetProperty(name, All);
+            return p?.GetValue(p.GetMethod.IsStatic ? null : target);
+        }
+
+        /// <summary>Sets "Class.field=value" and returns a way to put the old value back.</summary>
+        System.Action Set(string assignment)
+        {
+            var parts = assignment.Split(new[] { '=' }, 2);
+            if (parts.Length != 2 || !Resolve(parts[0].Trim(), out var type, out var target, out var name, out var error))
+                throw new GameCallException("can't set " + assignment);
+            var f = type.GetField(name, All);
+            var p = f == null ? type.GetProperty(name, All) : null;
+            var fieldType = f?.FieldType ?? p?.PropertyType;
+            if (fieldType == null) throw new GameCallException($"{type.Name}.{name} isn't a field");
+            var raw = parts[1].Trim();
+            object value = fieldType.IsEnum ? Enum.Parse(fieldType, raw, true) : Convert.ChangeType(raw, fieldType, CultureInfo.InvariantCulture);
+            object owner = f != null ? (f.IsStatic ? null : target) : (p.GetMethod.IsStatic ? null : target);
+            object old = f != null ? f.GetValue(owner) : p.GetValue(owner);
+            if (f != null) f.SetValue(owner, value); else p.SetValue(owner, value);
+            return () => { if (f != null) f.SetValue(owner, old); else p.SetValue(owner, old); };
+        }
+
+        // The panel's reward callback, for the game's reward delegate (no parameters, or one bool).
+        Delegate RewardDelegate(Type delegateType, Action row)
+        {
+            var invoke = delegateType.GetMethod("Invoke");
+            var ps = invoke?.GetParameters();
+            string method = ps == null ? null : ps.Length == 0 ? nameof(OnGameReward) : ps.Length == 1 && ps[0].ParameterType == typeof(bool) ? nameof(OnGameRewardBool) : null;
+            rewardFor = row;
+            return method == null ? null : Delegate.CreateDelegate(delegateType, this, GetType().GetMethod(method, BindingFlags.NonPublic | BindingFlags.Instance));
+        }
+
+        void OnGameReward()
+        {
+            if (rewardFor != null) Note(rewardFor, "✔ reward callback reached (game code)");
+            else Add("Reward callback reached");
+        }
+
+        void OnGameRewardBool(bool ok)
+        {
+            if (ok) OnGameReward();
+            else if (rewardFor != null) Note(rewardFor, "reward callback reached with false (no reward)", true);
+        }
+
+        void Run(Action a, string what, Func<string> body)
+        {
+            try
+            {
+                var result = body();
+                if (result != null) Note(a, result, result.StartsWith("not ready"));
+            }
+            catch (GameCallException e) { Note(a, $"{what}: {e.Message}", true); }
+            catch (Exception e) { Note(a, $"{what}: the game's code threw {e.GetType().Name}: {e.Message}", true); } // a bug in the ad script
+        }
+
+        void DoLoad(Action a) => Run(a, "Load", () =>
+        {
+            Call(a.load, a);
+            return $"called {a.load}()";
+        });
+
+        void DoShow(Action a) => Run(a, "Show", () =>
+        {
+            if (!string.IsNullOrEmpty(a.ready))
+            {
+                bool ready = Call(a.ready, a) is bool b && b;
+                if (!ready && a.requireReady) return $"not ready ({a.ready} = false): press Load and wait";
+                if (!ready) Add($"{a.name}: {a.ready} = false, showing anyway");
+            }
+            foreach (var call in Split(a.before)) Call(call, a);
+            if (!string.IsNullOrEmpty(a.rewardField))
+                SetDelegate(a.rewardField, a);
+
+            var restore = new List<System.Action>();
+            try
+            {
+                foreach (var f in Split(a.showFields)) restore.Add(Set(f));
+                Call(a.show, a);
+            }
+            finally
+            {
+                foreach (var r in restore) r(); // the game's own values back, right after its show method ran
+            }
+            if (string.IsNullOrEmpty(a.hide)) open = false; // rows without Hide are full-screen ads: get the panel out of the way
+            return $"called {a.show}()";
+        });
+
+        void DoHide(Action a) => Run(a, "Hide", () =>
+        {
+            Call(a.hide, a);
+            return $"called {a.hide}()";
+        });
+
+        void SetDelegate(string spec, Action row)
+        {
+            if (!Resolve(spec, out var type, out var target, out var name, out var error)) throw new GameCallException(error);
+            var f = type.GetField(name, All);
+            if (f == null || !typeof(Delegate).IsAssignableFrom(f.FieldType)) throw new GameCallException($"{spec} isn't a delegate field");
+            f.SetValue(f.IsStatic ? null : target, RewardDelegate(f.FieldType, row));
+        }
+
+        static IEnumerable<string> Split(string list) => (list ?? "").Split(';').Select(x => x.Trim()).Where(x => x.Length > 0);
+
+        class GameCallException : Exception { public GameCallException(string m) : base(m) { } }
+
+        string Watch(string spec)
+        {
+            try
+            {
+                if (!Resolve(spec, out var type, out var target, out var name, out _)) return "–";
+                var v = Read(type, target, name);
+                return v is float f ? f.ToString("0.#", CultureInfo.InvariantCulture) : v?.ToString() ?? "null";
+            }
+            catch { return "?"; }
+        }
+
+        // ---------------------------------------------------------------- panel
+
+        static float Scale => Mathf.Max(1f, Mathf.Min(Screen.width, Screen.height) / 420f);
+
+        void InitStyles()
+        {
+            if (title != null) return;
+            title = new GUIStyle(GUI.skin.label) { fontSize = 17, fontStyle = FontStyle.Bold, normal = { textColor = Color.white } };
+            label = new GUIStyle(GUI.skin.label) { fontSize = 13, wordWrap = true, richText = true, normal = { textColor = Color.white } };
+            small = new GUIStyle(label) { fontSize = 11, normal = { textColor = new Color(0.8f, 0.8f, 0.8f) } };
+            button = new GUIStyle(GUI.skin.button) { fontSize = 13, fixedHeight = 34 };
+            box = new GUIStyle(GUI.skin.box) { padding = new RectOffset(8, 8, 6, 6) };
+        }
+
+        void OnGUI()
+        {
+            if (!open) return;
+            InitStyles();
+            float scale = Scale;
+            GUI.matrix = Matrix4x4.Scale(new Vector3(scale, scale, 1));
+            float w = Screen.width / scale, h = Screen.height / scale;
+            var safe = Screen.safeArea;
+            float top = (Screen.height - safe.yMax) / scale, bottom = safe.yMin / scale;
+
+            var prev = GUI.color;
+            GUI.color = new Color(0, 0, 0, 0.88f);
+            GUI.DrawTexture(new Rect(0, 0, w, h), Texture2D.whiteTexture);
+            GUI.color = prev;
+
+            GUILayout.BeginArea(new Rect(10, top + 8, w - 20, h - top - bottom - 16));
+            using (new GUILayout.HorizontalScope())
+            {
+                GUILayout.Label("GenZ Deep Test · Ads", title);
+                GUILayout.FlexibleSpace();
+                if (GUILayout.Button("Close", button, GUILayout.Width(80))) open = false;
+            }
+            GUILayout.Label($"MAX: {(MaxSdk.IsInitialized() ? "<color=#7d7>started</color>" : "<color=#fb5>not started</color>")}"
+                            + $" · verbose {(settings.maxVerbose ? "on" : "off")}   AdMob test ads: {admobTestDevice}", small);
+            if (settings.watch.Length > 0)
+                GUILayout.Label(string.Join("   ", settings.watch.Select(s => $"{s.Substring(s.LastIndexOf('.') + 1)} <b>{Watch(s)}</b>")), small);
+            GUILayout.Label("Every button calls your ad scripts. Shake again to close.", small);
+
+            using (new GUILayout.HorizontalScope())
+            {
+                // SDK debug tools (no ad is loaded or shown by these).
+                if (GUILayout.Button("MAX Mediation Debugger", button))
+                {
+                    if (MaxSdk.IsInitialized()) { MaxSdk.ShowMediationDebugger(); open = false; }
+                    else Add("MAX hasn't started yet");
+                }
+                if (GUILayout.Button("AdMob Ad Inspector", button))
+                {
+                    MobileAds.OpenAdInspector(e => Add(e == null ? "Ad Inspector closed" : "Ad Inspector: " + e.GetMessage()));
+                    open = false;
+                }
+            }
+
+            scroll = GUILayout.BeginScrollView(scroll);
+            if (settings.actions.Count == 0)
+                GUILayout.Label("No rows. Apply Test Environment again in the Editor (GenZ-DeepTestSuit) and rebuild.", label);
+            foreach (var a in settings.actions) DrawRow(a);
+
+            GUILayout.Space(6);
+            GUILayout.Label("<b>Log</b>", label);
+            foreach (var l in lines) GUILayout.Label(l, small);
+            GUILayout.EndScrollView();
+            GUILayout.EndArea();
+        }
+
+        void DrawRow(Action a)
+        {
+            using (new GUILayout.VerticalScope(box))
+            {
+                failed.TryGetValue(a, out var bad);
+                var text = state[a];
+                GUILayout.Label($"<b>{a.name}</b>" + (text.Length == 0 ? "" : $"\n<color={(bad ? "#f77" : "#7d7")}>{text}</color>"), label);
+                using (new GUILayout.HorizontalScope())
+                {
+                    if (!string.IsNullOrEmpty(a.load) && GUILayout.Button("Load", button)) DoLoad(a);
+                    if (!string.IsNullOrEmpty(a.show) && GUILayout.Button("Show", button)) DoShow(a);
+                    if (!string.IsNullOrEmpty(a.hide) && GUILayout.Button("Hide", button)) DoHide(a);
+                }
+            }
+        }
+    }
+}
+#endif

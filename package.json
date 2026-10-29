@@ -1,0 +1,11 @@
+{
+  "name": "com.genz.testsuit",
+  "version": "1.0.0",
+  "displayName": "GenZ Test Suit",
+  "description": "GenZ studio pre-release checker for Android games built on AdsScripts-GenzAds: ad IDs against the studio sheet, SDK integration, Taichi, ad-calling code, release APK checks on a phone, and the Deep Test environment. Opens from GenZ > Test Suit.",
+  "unity": "2022.3",
+  "author": { "name": "GenZ" },
+  "documentationUrl": "https://github.com/GenzProjects/GenZ-TestSuit/blob/main/Documentation~/GenZ-TestSuit.md",
+  "changelogUrl": "https://github.com/GenzProjects/GenZ-TestSuit/blob/main/CHANGELOG.md",
+  "keywords": ["genz", "test", "ads", "release"]
+}
