@@ -1,0 +1,3 @@
+GenZ Ads v1.32
+
+SDK vendor switch added on firebase

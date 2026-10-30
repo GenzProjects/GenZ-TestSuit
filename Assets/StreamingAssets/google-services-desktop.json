@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "773657183506",
+    "project_id": "and-one-go-lineeee",
+    "storage_bucket": "and-one-go-lineeee.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:773657183506:android:99176a642fddc84153dfcb",
+        "android_client_info": {
+          "package_name": "com.gps.onego.line.puzzle"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCXjfAImngAH9GYEA4xsMuhE1CpB27KU40"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

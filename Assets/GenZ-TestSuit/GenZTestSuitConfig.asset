@@ -1,0 +1,883 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3361a382e578a7249bb4b2e11cc91d36, type: 3}
+  m_Name: GenZTestSuitConfig
+  m_EditorClassIdentifier: 
+  configVersion: 10
+  sdkScene: {fileID: 102900000, guid: 6f17c457ec077674d80d38ade5f31c13, type: 3}
+  adsObjectName: Ads
+  googleSheetUrl: https://docs.google.com/spreadsheets/d/1nd87c3FFAHqOhtNIN2ZqVyXlNlSfsQJo2YjL1wh9UMk/edit?gid=0#gid=0
+  sheetTabs:
+  - name: Android Games ID's
+    gid: 0
+  - name: Android Max ID's
+    gid: 1078150226
+  verifyAgainstSheet: 1
+  packageColumnNames:
+  - Package Name
+  - Package
+  - Bundle ID
+  - Bundle Identifier
+  - Application ID
+  runIdChecks: 1
+  runIntegrationChecks: 1
+  integration:
+    requiredSdks:
+    - Firebase|Firebase
+    - GameAnalytics|GameAnalytics
+    - AppMetrica|AppMetrica
+    - Adjust|Adjust
+    - AppLovin MAX|MaxSdk
+    - Google Mobile Ads|GoogleMobileAds
+    firebaseModules:
+    - Firebase.App
+    - Firebase.Analytics
+    - Firebase.RemoteConfig
+  playerSettings:
+    enabled: 1
+    autoGraphicsApi: 0
+    forbiddenGraphicsApis:
+    - Vulkan
+    requireES31: 0
+    requireES31AEP: 1
+    requireES32: 1
+    scriptingBackend: IL2CPP
+    targetArchitectures:
+    - ARMv7
+    - ARM64
+    minSdk: 24
+    targetSdk: 36
+  taichi:
+    enabled: 1
+    managerClasses:
+    - FirebaseManager
+    requireTaichi1: 0
+    requireTaichi2: 1
+    taichi1Flags:
+    - Taiche1_0
+    - Taichi1_0
+    - taichi1
+    - Taichi1
+    taichi2Flags:
+    - Taiche2_0
+    - Taichi2_0
+    - taichi2
+    - Taichi2
+    taichi1Event: custom_ad_impression
+    taichi2Event: count_ad_impression
+    taichi1Key: custom_rev
+    taichi2Key: custom_imp
+    defaultClasses:
+    - RemoteConfigManager
+    taichi1DefaultFields:
+    - taichi1DefaultRevenue
+    taichi2DefaultFields:
+    - taichi2DefaultImpressions
+    taichi2SheetColumns:
+    - Taichi 2.0 Default Values
+    - Taichi 2.0 Default
+    - Taichi Default Values
+    - Taichi 2.0
+  codeChecks:
+    enabled: 1
+    adScripts:
+    - AdMob
+    - Admob
+    - AdsIds
+    - AdsManager
+    - Analytics
+    - AppmetricaAnalytics
+    - AppOpen_Code
+    - BigBanner
+    - FirebaseManager
+    - GA_Aanalytics
+    - InAppCalling
+    - InAppReviewManager
+    - UmpManager
+    - unityInApp
+    requiredScripts:
+    - AdMob|Admob
+    - AdsIds
+    - AdsManager
+    - Analytics
+    - AppmetricaAnalytics
+    - AppOpen_Code
+    - FirebaseManager
+    - GA_Aanalytics
+    - InAppCalling
+    - InAppReviewManager
+    - UmpManager
+    - unityInApp
+    - AdsGapTimer
+    gapTimerClass: AdsGapTimer
+    resetMethods:
+    - ResetTimer
+    timerFields:
+    - timeLeft
+    gateFields:
+    - canShowAd
+    remoteConfigClasses:
+    - FirebaseManager
+    - RemoteConfigManager
+    vendorSwitchFields:
+    - useSdkVendorSwitch
+    revenueSinks:
+    - Adjust|\bAdjust\s*\.\s*TrackAdRevenue\s*\(
+    - Firebase|"ad_impression"|\bEventAdImpression\b
+    - AppMetrica|\bReportRevenue_\w*\s*\(|\bReportAdRevenue\s*\(
+    excludeFolders:
+    - Plugins
+    - GoogleMobileAds
+    - MaxSdk
+    - Firebase
+    - GameAnalytics
+    - Adjust
+    - AppMetrica
+    - ExternalDependencyManager
+    - Dreamteck
+    - Demigiant
+    - NiceVibrations
+    - TextMesh Pro
+    - Kits
+  apk:
+    requiredSdks:
+    - MAX
+    - AdMob
+    - Firebase
+    - RemoteConfig
+    - GameAnalytics
+    - Adjust
+    - AppMetrica
+    - UMP
+    optionalSdks:
+    - IAP
+    - FCM
+    firebaseEvents:
+    - ad_impression
+    adFormats:
+    - Banner
+    - Interstitial
+    - Rewarded
+    - AppOpen
+    requiredPermissions:
+    - android.permission.INTERNET
+    - android.permission.ACCESS_NETWORK_STATE
+    - com.google.android.gms.permission.AD_ID
+    minTargetSdk: 36
+    logcatBufferMb: 16
+    firebaseEventPattern: 'Logging event(?: \(FE\))?:?\s*(?:origin=\w+,\s*name=)?([A-Za-z0-9_]+)'
+    firebaseUploadOkPattern: 'Successful upload|Upload successful|network response\.
+      code, size: 20\d'
+    firebaseUploadFailPattern: 'Network upload failed|Upload failed|network response\.
+      code, size: [45]\d\d'
+    gaTag: GameAnalytics
+    gaEventPattern: (?i)\b(add(ed|ing)?|sen[dt](ing)?)\b.*\bevents?\b
+    gaErrorPattern: (?i)\b(error|fail(ed|ure)?|invalid)\b
+    gaBuildPattern: '"build"\s*:\s*"([^"]+)"'
+    adjustTag: Adjust
+  deepTest:
+    define: GENZ_DEEP_TEST
+    maxVerboseLogging: 1
+    maxCreativeDebugger: 1
+    admobTestDevice: 1
+    shakeThreshold: 2
+    settings:
+    - enabled: 1
+      label: Adjust environment
+      rule: Adjust
+      fieldNames:
+      - environment
+      testValue: Sandbox
+      releaseValue: Production
+      note: 'Sandbox: test installs and events show in Adjust''s Testing Console,
+        not in the live numbers.'
+    - enabled: 1
+      label: Adjust log level
+      rule: Adjust
+      fieldNames:
+      - logLevel
+      testValue: Verbose
+      releaseValue: Info
+      note: Every Adjust request and response in logcat (tag Adjust).
+    - enabled: 1
+      label: AppMetrica logs
+      rule: AppMetrica
+      fieldNames:
+      - Logs
+      testValue: true
+      releaseValue: false
+      note: AppMetrica's own log in logcat (tag AppMetrica).
+    - enabled: 1
+      label: GameAnalytics verbose log
+      rule: GameAnalytics Settings
+      fieldNames:
+      - VerboseLogBuild
+      testValue: true
+      releaseValue: false
+      note: Every GameAnalytics event and its JSON in logcat.
+    - enabled: 1
+      label: GameAnalytics info log
+      rule: GameAnalytics Settings
+      fieldNames:
+      - InfoLogBuild
+      testValue: true
+      releaseValue: true
+      note: 'Kept on in release too: the APK Test Suit reads it.'
+    - enabled: 0
+      label: UMP consent test mode
+      rule: UmpManager (AdMob consent)
+      fieldNames:
+      - isTestMode
+      - testMode
+      - isTestModeOn
+      - debugMode
+      testValue: true
+      releaseValue: false
+      note: 'Shows the EEA consent form on the test devices listed in UmpManager.
+        Off by default: it only works on those devices.'
+    actions:
+    - name: Interstitial (game waterfall)
+      load: 
+      ready: 
+      show: AdsManager.ShowInterstitial
+      hide: 
+      requireReady: 0
+      before: 
+      showFields: 
+      rewardField: 
+    - name: Rewarded (game waterfall)
+      load: 
+      ready: 
+      show: AdsManager.ShowRewardedAd
+      hide: 
+      requireReady: 0
+      before: 
+      showFields: 
+      rewardField: 
+    - name: MAX Interstitial
+      load: AdsManager.RequestInter
+      ready: AdsManager.IsMaxInterstitialReady
+      show: AdsManager.ShowMaxInterstitial
+      hide: 
+      requireReady: 1
+      before: 
+      showFields: 
+      rewardField: 
+    - name: MAX Rewarded
+      load: AdsManager.RequestVideo
+      ready: AdsManager.IsMaxRewardedReady
+      show: AdsManager.ShowRewardedAd
+      hide: 
+      requireReady: 1
+      before: 
+      showFields: AdsManager.useSdkVendorSwitch=0
+      rewardField: 
+    - name: MAX Banner
+      load: 
+      ready: 
+      show: AdsManager.ShowBanner
+      hide: AdsManager.HideBanner
+      requireReady: 0
+      before: AdMob.bannerHide
+      showFields: 
+      rewardField: 
+    - name: MAX MREC
+      load: 
+      ready: 
+      show: AdsManager.ShowMRECBanner
+      hide: AdsManager.HideMRECBanner
+      requireReady: 0
+      before: 
+      showFields: 
+      rewardField: 
+    - name: AdMob Interstitial
+      load: AdMob.RequestInterstitial
+      ready: AdMob.HasAdmobInterstialAvaible
+      show: AdMob.ShowInterstialAd
+      hide: 
+      requireReady: 1
+      before: 
+      showFields: 
+      rewardField: 
+    - name: AdMob Rewarded
+      load: AdMob.RequesRewardAd
+      ready: AdMob.HasRewardedAvaiable
+      show: AdMob.ShowRewardAd
+      hide: 
+      requireReady: 1
+      before: 
+      showFields: 
+      rewardField: AdsManager._rewarded
+    - name: AdMob Banner
+      load: AdMob.RequestBanner
+      ready: 
+      show: AdMob.bannerShow
+      hide: AdMob.bannerHide
+      requireReady: 0
+      before: AdsManager.HideBanner
+      showFields: AdsManager.isBannerShowing=false
+      rewardField: 
+    - name: AdMob App Open
+      load: AppOpen_Code.LoadOpenApp
+      ready: 
+      show: AppOpen_Code.ShowAppOpenAdIfAvailable
+      hide: 
+      requireReady: 0
+      before: 
+      showFields: AdMob.isPausedDuetoAd=false
+      rewardField: 
+    watch:
+    - AdsGapTimer.canShowAd
+    - AdsGapTimer.time
+    - AdsGapTimer.timeLeft
+    - AdsManager.useSdkVendorSwitch
+    - AdsManager.isBannerShowing
+    - AdMob.isPausedDuetoAd
+  rules:
+  - label: AdsIds (In-App IDs)
+    target: 0
+    scriptNames:
+    - AdsIds
+    - AdIds
+    - AdsID
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: In-App product IDs
+      fieldNames:
+      - InAppIds
+      - InAppKeys
+      - InAppProducts
+      - Products
+      - ProductIds
+      kind: 3
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: AdMob
+    target: 0
+    scriptNames:
+    - AdMob
+    - Admob
+    - AdmobManager
+    - AdMobManager
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: Banner ID
+      fieldNames:
+      - bannerID
+      - bannerAdUnitId
+      - admobBannerId
+      kind: 0
+      required: 1
+      sheetColumns:
+      - admob banner
+      - AdMob Banner ID
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Interstitial ID
+      fieldNames:
+      - interstitialID
+      - interID
+      - interstitialAdUnitId
+      - admobInterstitialId
+      kind: 0
+      required: 1
+      sheetColumns:
+      - admob int
+      - AdMob Interstitial
+      - AdMob Inter
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Rewarded ID
+      fieldNames:
+      - rewardID
+      - rewardedID
+      - rewardedAdUnitId
+      - admobRewardedId
+      kind: 0
+      required: 1
+      sheetColumns:
+      - admob rewarded
+      - AdMob Reward
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Test IDs switch is OFF
+      fieldNames:
+      - isTestIdOn
+      - useTestIds
+      - testMode
+      kind: 4
+      required: 0
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: AdsManager (AppLovin MAX)
+    target: 0
+    scriptNames:
+    - AdsManager
+    - AdManager
+    - MaxAdsManager
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: MAX SDK Key
+      fieldNames:
+      - maxSdkKey
+      - sdkKey
+      - MaxSdkKey
+      kind: 1
+      required: 1
+      sheetColumns:
+      - MAX SDK Key
+      - Applovin SDK Key
+      - SDK Key
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: MAX Interstitial ID
+      fieldNames:
+      - InterstitialAdUnitId_Android
+      - InterstitialAdUnitId
+      - InterstitialAdUnitId_IOS
+      - interAdUnitId
+      kind: 2
+      required: 1
+      sheetColumns:
+      - Int
+      - MAX Int
+      - MAX Interstitial
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: MAX Banner ID
+      fieldNames:
+      - BannerAdUnitId
+      - BannerAdUnitId_Android
+      - BannerAdUnitId_IOS
+      kind: 2
+      required: 1
+      sheetColumns:
+      - Banner
+      - MAX Banner
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: MAX Rewarded ID
+      fieldNames:
+      - RewardedAdUnitId_Android
+      - RewardedAdUnitId
+      - RewardedAdUnitId_IOS
+      - rewardAdUnitId
+      kind: 2
+      required: 1
+      sheetColumns:
+      - Rewarded
+      - MAX Rewarded
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: MAX MREC ID
+      fieldNames:
+      - MRecAdUnitId
+      - MrecAdUnitId_Android
+      - MRecAdUnitId_IOS
+      kind: 2
+      required: 1
+      sheetColumns:
+      - MRec
+      - MAX MREC
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: AppOpen_Code
+    target: 0
+    scriptNames:
+    - AppOpen_Code
+    - AppOpenCode
+    - AppOpen
+    - AppOpenAdManager
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: App Open ID
+      fieldNames:
+      - AppOpenId
+      - appOpenAdUnitId
+      - AdUnitId
+      kind: 0
+      required: 1
+      sheetColumns:
+      - App Open
+      - AdMob App Open
+      - App Open ID
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: FirebaseManager
+    target: 0
+    scriptNames:
+    - FirebaseManager
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields: []
+  - label: RemoteConfigManager (Taichi defaults)
+    target: 0
+    scriptNames:
+    - RemoteConfigManager
+    required: 0
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: Taichi 1.0 default revenue > 0
+      fieldNames:
+      - taichi1DefaultRevenue
+      kind: 12
+      required: 0
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Taichi 2.0 default impressions > 0
+      fieldNames:
+      - taichi2DefaultImpressions
+      kind: 12
+      required: 0
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: Analytics
+    target: 0
+    scriptNames:
+    - Analytics
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields: []
+  - label: unityInApp
+    target: 0
+    scriptNames:
+    - unityInApp
+    - UnityInApp
+    - UnityIAP
+    - InAppManager
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields: []
+  - label: Adjust
+    target: 1
+    scriptNames:
+    - Adjust
+    required: 1
+    objectNames:
+    - Adjust
+    mustBeActive: 0
+    expectPrefab: 1
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: App Token
+      fieldNames:
+      - appToken
+      - token
+      kind: 7
+      required: 1
+      sheetColumns:
+      - Adjust Token
+      - Adjust App Token
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Environment is Production
+      fieldNames:
+      - environment
+      kind: 11
+      required: 1
+      sheetColumns: []
+      expectedValue: Production
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: AppMetrica
+    target: 1
+    scriptNames:
+    - AppMetrica
+    required: 1
+    objectNames:
+    - AppMetrica
+    mustBeActive: 0
+    expectPrefab: 1
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: API Key
+      fieldNames:
+      - ApiKey
+      - apiKey
+      - key
+      kind: 13
+      required: 1
+      sheetColumns:
+      - AppMatrica
+      - AppMetrica
+      - AppMetrica Key
+      - AppMetrica API Key
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: GameAnalytics (object)
+    target: 1
+    scriptNames:
+    - GameAnalytics
+    required: 1
+    objectNames:
+    - GameAnalytics
+    mustBeActive: 0
+    expectPrefab: 1
+    assetNames: []
+    assetFolder: 
+    fields: []
+  - label: AdsGapTimer (interstitial cooldown)
+    target: 1
+    scriptNames:
+    - AdsGapTimer
+    - AdGapTimer
+    required: 1
+    objectNames:
+    - AdsGapTimer
+    - AdGapTimer
+    - AdsTimer
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: Default cooldown > 0
+      fieldNames:
+      - timeLeft
+      - gapTime
+      - cooldown
+      kind: 12
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: UmpManager (AdMob consent)
+    target: 1
+    scriptNames:
+    - UmpManager
+    - UMPManager
+    required: 1
+    objectNames:
+    - UmpManager
+    - UMPManager
+    - UMP
+    mustBeActive: 1
+    expectPrefab: 0
+    assetNames: []
+    assetFolder: 
+    fields:
+    - label: Test Mode is OFF
+      fieldNames:
+      - isTestMode
+      - testMode
+      - isTestModeOn
+      - debugMode
+      kind: 4
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: GameAnalytics Settings
+    target: 2
+    scriptNames:
+    - Settings
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames:
+    - Settings
+    assetFolder: Resources/GameAnalytics
+    fields:
+    - label: Game Key (Android)
+      fieldNames:
+      - gameKey
+      kind: 8
+      required: 1
+      sheetColumns:
+      - GA Game Key
+      - GameAnalytics Game Key
+      expectedValue: 
+      platformListField: Platforms
+      platformName: Android
+      sameAs: 
+    - label: Secret Key (Android)
+      fieldNames:
+      - secretKey
+      kind: 9
+      required: 1
+      sheetColumns:
+      - GA Secret Key
+      - GameAnalytics Secret Key
+      expectedValue: 
+      platformListField: Platforms
+      platformName: Android
+      sameAs: 
+    - label: Send Version is ON
+      fieldNames:
+      - UsePlayerSettingsBuildNumber
+      kind: 10
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: Google Mobile Ads Settings
+    target: 2
+    scriptNames:
+    - GoogleMobileAdsSettings
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames:
+    - GoogleMobileAdsSettings
+    assetFolder: Resources
+    fields:
+    - label: Android App ID
+      fieldNames:
+      - adMobAndroidAppId
+      kind: 6
+      required: 1
+      sheetColumns:
+      - Admob AppID
+      - AdMob App ID
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Optimize Initialization is ON
+      fieldNames:
+      - optimizeInitialization
+      kind: 10
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+    - label: Optimize Ad Loading is ON
+      fieldNames:
+      - optimizeAdLoading
+      kind: 10
+      required: 1
+      sheetColumns: []
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: 
+  - label: AppLovin Settings (Integration Manager)
+    target: 2
+    scriptNames:
+    - AppLovinSettings
+    required: 1
+    objectNames: []
+    mustBeActive: 0
+    expectPrefab: 0
+    assetNames:
+    - AppLovinSettings
+    assetFolder: Resources
+    fields:
+    - label: SDK Key
+      fieldNames:
+      - sdkKey
+      kind: 1
+      required: 1
+      sheetColumns:
+      - MAX SDK Key
+      - Applovin SDK Key
+      - SDK Key
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: AdsManager (AppLovin MAX)/MAX SDK Key
+    - label: AdMob Android App ID
+      fieldNames:
+      - adMobAndroidAppId
+      kind: 6
+      required: 1
+      sheetColumns:
+      - Admob AppID
+      - AdMob App ID
+      expectedValue: 
+      platformListField: 
+      platformName: 
+      sameAs: Google Mobile Ads Settings/Android App ID
