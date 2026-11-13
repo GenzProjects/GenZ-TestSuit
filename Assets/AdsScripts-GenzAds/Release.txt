@@ -1,3 +1,8 @@
+GenZ Ads v1.33 (in development, since 2026-11-10)
+
+Changes:
+- Every script starts with "// GenzMonetization-v1.33" (the GenZ Test Suit checks all scripts state the same version).
+
 GenZ Ads v1.32
 
 SDK vendor switch added on firebase

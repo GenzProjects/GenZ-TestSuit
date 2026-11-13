@@ -1,4 +1,5 @@
-﻿using AdjustSdk;
+﻿// GenzMonetization-v1.33
+using AdjustSdk;
 using GameAnalyticsSDK;
 using GoogleMobileAds.Api;
 using System;
@@ -11,23 +12,14 @@ public class AdsManager : MonoBehaviour
     public static AdsManager instance = null;
 
     [SerializeField] private string maxSdkKey = "";
-#if UNITY_IPHONE || UNITY_IOS
-    //[SerializeField] string BannerAdUnitId_IOS = "";
-    [SerializeField] string InterstitialAdUnitId_IOS = "";
-    [SerializeField] string RewardedAdUnitId_IOS = "";
-    [Space(50)]
-#else
-    //[SerializeField] string BannerAdUnitId_Android = "";
-    [SerializeField] string InterstitialAdUnitId_Android = "";
-    [SerializeField] string RewardedAdUnitId_Android = "";
+    
+    [SerializeField] string InterstitialAdUnitId = "";
+    [SerializeField] string RewardedAdUnitId = "";
     [SerializeField] string BannerAdUnitId = "";
     [SerializeField] string MRecAdUnitId = "";
-
-#endif
+    
     [SerializeField] MaxSdkBase.BannerPosition bannerPosition;
-    //public static string BannerAdUnitId = "";
-    public static string InterstitialAdUnitId = "";
-    public static string RewardedAdUnitId = "";
+
     private int interRequestTime = 0;
     private int rewardRequestTime = 0;
 
@@ -85,16 +77,7 @@ public class AdsManager : MonoBehaviour
         if (PlayerPrefs.GetInt("MaxAdStop") == 1) return;
 
         //AdSettings.SetDataProcessingOptions(new string[] { "LDU" }, 1, 1000);
-#if UNITY_IPHONE || UNITY_IOS
-        BannerAdUnitId = BannerAdUnitId_IOS;
-        InterstitialAdUnitId = InterstitialAdUnitId_IOS;
-        RewardedAdUnitId = RewardedAdUnitId_IOS;
-        mrecAdUnitId = MRecAdUnitId_IOS;
-#else
-        //BannerAdUnitId = BannerAdUnitId_Android;
-        InterstitialAdUnitId = InterstitialAdUnitId_Android;
-        RewardedAdUnitId = RewardedAdUnitId_Android;
-#endif
+        
         MaxSdkCallbacks.OnSdkInitializedEvent += (MaxSdkBase.SdkConfiguration sdkConfiguration) =>
         {
             GenZLog.Result("MAX", "init", sdkConfiguration.IsSuccessfullyInitialized);
@@ -196,7 +179,7 @@ public class AdsManager : MonoBehaviour
     }
     private void OnInterstitialHiddenEvent(string adUnitId, MaxSdkBase.AdInfo adInfo)
     {
-        Invoke("LoadInterstitial", 0.5f);
+        Invoke(nameof(LoadInterstitial), 0.5f);
         Time.timeScale = 1;
         AdsGapTimer.instance.ResetTimer();
     }
@@ -554,6 +537,39 @@ public class AdsManager : MonoBehaviour
     string _placementName = "";
 
     // ****************** Revenue Paid Events ***************************
+    
+    private void AdRevenuePaidEvent_Common(string adUnitId, MaxSdkBase.AdInfo impressionData)
+    {
+       
+        double revenue = impressionData.Revenue;
+        var impressionParameters = new[] {
+            new Firebase.Analytics.Parameter("ad_platform", "AppLovin"),
+            new Firebase.Analytics.Parameter("ad_source", impressionData.NetworkName),
+            new Firebase.Analytics.Parameter("ad_unit_name", impressionData.AdUnitIdentifier),
+            new Firebase.Analytics.Parameter("ad_format", impressionData.AdFormat),
+            new Firebase.Analytics.Parameter("value", revenue),
+            new Firebase.Analytics.Parameter("currency", "USD"), // All AppLovin revenue is sent in USD
+        };
+        Firebase.Analytics.FirebaseAnalytics.LogEvent("ad_impression", impressionParameters);
+
+        FirebaseManager.Instance.CheckTheRevenue(revenue);
+        FirebaseManager.Instance.CheckTheImpressionForRevenue(revenue);
+
+        //Rev Event For Adjust
+        AdjustAdRevenue adjustAdRevenue = new AdjustAdRevenue("applovin_max_sdk");
+        adjustAdRevenue.SetRevenue(revenue, "USD");
+        adjustAdRevenue.AdRevenueNetwork = impressionData.NetworkName;
+        adjustAdRevenue.AdRevenueUnit = $"{impressionData.AdFormat}_{impressionData.AdUnitIdentifier}";
+        Adjust.TrackAdRevenue(adjustAdRevenue);
+
+        GenZLog.Ok("Ads", "impression", "MAX Interstitial");
+        GenZLog.Call("Adjust", "ad_revenue", "MAX Interstitial");
+        AppmetricaAnalytics.ReportRevenue_Applovin(impressionData, AppmetricaAnalytics.AdFormat.Interstitial, _placementName);
+
+        Debug.Log("MAX Rev: " + revenue);
+
+        GA_Aanalytics.GA_IntEvent_MAX();
+    }
     private void AdRevenuePaidEvent_Inter(string adUnitId, MaxSdkBase.AdInfo impressionData)
     {
        
