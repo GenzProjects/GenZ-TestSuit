@@ -24,8 +24,6 @@ public class InAppReviewManager : MonoBehaviour
     {
 
         AdsManager.instance.isPausedDuetoAd = true;
-        AdMob._instance.isPausedDuetoAd = true;
-
         _reviewManager = new ReviewManager();
 
         var requestFlowOperation = _reviewManager.RequestReviewFlow();

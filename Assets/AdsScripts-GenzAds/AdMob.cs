@@ -27,8 +27,6 @@ public class AdMob : MonoBehaviour
     public static AdMob _instance;
     public GameObject callBackObject;
 
-    public bool isPausedDuetoAd;
-
     //Action _callback;
     public AppOpen_Code _appOpen;
     private void Awake()
@@ -235,7 +233,7 @@ public class AdMob : MonoBehaviour
         // Show failed (e.g. the ad expired): Closed never comes, so reload the same way as a failed load
         interstitialAd.OnAdFullScreenContentFailed += (AdError error) =>
         {
-            isPausedDuetoAd = false; // nothing was shown
+            AdsManager.instance.isPausedDuetoAd = false; // nothing was shown
             interRetryPending = true;
         };
     }
@@ -249,7 +247,7 @@ public class AdMob : MonoBehaviour
             if (interstitial != null)
             {
                 interstitial.Show();
-                isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
             }
 
     }
@@ -311,7 +309,7 @@ public class AdMob : MonoBehaviour
         // Show failed (e.g. the ad expired): Closed never comes, so reload the same way as a failed load
         ad.OnAdFullScreenContentFailed += (AdError error) =>
         {
-            isPausedDuetoAd = false; // nothing was shown
+            AdsManager.instance.isPausedDuetoAd = false; // nothing was shown
             rewardRetryPending = true;
         };
     }
@@ -334,7 +332,7 @@ public class AdMob : MonoBehaviour
                     AdsGapTimer.instance.ResetTimer();
                     Invoke(nameof(DelayRequest), 0.3f);
                 });
-                isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
 
                 GA_Aanalytics.GA_RewardedEventADMOB();
             }

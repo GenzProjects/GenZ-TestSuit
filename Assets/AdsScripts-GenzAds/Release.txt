@@ -2,6 +2,8 @@ GenZ Ads v1.33 (in development, since 2026-11-10)
 
 Changes:
 - Every script starts with "// GenzMonetization-v1.33" (the GenZ Test Suit checks all scripts state the same version).
+- unityInApp: optional Inspector fields loadingScreen and failIAPScreen. Loading screen shows while a purchase runs and hides when it completes or fails; fail screen shows when a purchase can't start or fails, then hides after failScreenDuration (default 1 s).
+- unityInApp: sets AdsManager.isPausedDuetoAd before opening the store, so no App Open ad shows when the player returns from the purchase dialog (same mechanism as InAppReviewManager).
 
 GenZ Ads v1.32
 

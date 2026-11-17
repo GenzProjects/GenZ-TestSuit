@@ -206,7 +206,7 @@ public class AdsManager : MonoBehaviour
         return isMaxInitialized && MaxSdk.IsRewardedAdReady(RewardedAdUnitId) && PlayerPrefs.GetInt("MaxAdStop") == 0;
     }
 
-    public void ShowInterstitial()
+    public void ShowInterstitial( string placement=null)
     {
         currentCount = PlayerPrefs.GetInt("AdmobCount", 0);
 
@@ -221,7 +221,7 @@ public class AdsManager : MonoBehaviour
 
             if (IsMaxInterstitialReady())
             {
-                AdMob._instance.isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
                 ShowMaxInterstitial();
                 interShowCount++;
 
@@ -232,7 +232,7 @@ public class AdsManager : MonoBehaviour
                 LoadInterstitial();
                 if (AdMob._instance.HasAdmobInterstialAvaible())
                 {
-                    AdMob._instance.isPausedDuetoAd = true;
+                    AdsManager.instance.isPausedDuetoAd = true;
                     AdMob._instance.ShowInterstialAd();
                     interShowCount++;
 
@@ -252,7 +252,7 @@ public class AdsManager : MonoBehaviour
     {
         if (AdMob._instance.HasAdmobInterstialAvaible())
         {
-            AdMob._instance.isPausedDuetoAd = true;
+            AdsManager.instance.isPausedDuetoAd = true;
             AdMob._instance.ShowInterstialAd();
             interShowCount++;
         }
@@ -261,7 +261,7 @@ public class AdsManager : MonoBehaviour
             GameAnalytics.NewAdEvent(GAAdAction.FailedShow, GAAdType.Interstitial, "ADMOB", "Interstitial");
             if (IsMaxInterstitialReady())
             {
-                AdMob._instance.isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
                 ShowMaxInterstitial();
                 interShowCount++;
             }
@@ -283,6 +283,12 @@ public class AdsManager : MonoBehaviour
        
     }
 
+    public bool IsInterstatialAvailable()
+    {
+        if (IsMaxInterstitialReady() || AdMob._instance.HasAdmobInterstialAvaible())
+            return true;
+        return false;
+    }
 
     #endregion
 
@@ -365,7 +371,7 @@ public class AdsManager : MonoBehaviour
 
             if (IsMaxRewardedReady())
             {
-                AdMob._instance.isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
                 MaxSdk.ShowRewardedAd(RewardedAdUnitId);
                 rewardedShowCount++;
 
@@ -377,12 +383,12 @@ public class AdsManager : MonoBehaviour
                 if (useSdkVendorSwitch == 0)
                 {
                     AdMob._instance.ShowRewardAd();
-                    AdMob._instance.isPausedDuetoAd = true;
+                    AdsManager.instance.isPausedDuetoAd = true;
                 }
                 else if (AdMob._instance.HasRewardedAvaiable())
                 {
                     AdMob._instance.ShowRewardAd();
-                    AdMob._instance.isPausedDuetoAd = true;
+                    AdsManager.instance.isPausedDuetoAd = true;
                     rewardedShowCount++;
                 }
                 else
@@ -400,7 +406,7 @@ public class AdsManager : MonoBehaviour
         if (AdMob._instance.HasRewardedAvaiable())
         {
             AdMob._instance.ShowRewardAd();
-            AdMob._instance.isPausedDuetoAd = true;
+            AdsManager.instance.isPausedDuetoAd = true;
             rewardedShowCount++;
         }
         else
@@ -408,7 +414,7 @@ public class AdsManager : MonoBehaviour
             GameAnalytics.NewAdEvent(GAAdAction.FailedShow, GAAdType.RewardedVideo, "ADMOB", "Rewarded");
             if (IsMaxRewardedReady())
             {
-                AdMob._instance.isPausedDuetoAd = true;
+                AdsManager.instance.isPausedDuetoAd = true;
                 MaxSdk.ShowRewardedAd(RewardedAdUnitId);
                 rewardedShowCount++;
             }

@@ -81,7 +81,7 @@ public class AppOpen_Code : MonoBehaviour
 
     public void ShowAppOpenAdIfAvailable()
     {
-        if (!AdMob._instance.isPausedDuetoAd)
+        if (! AdsManager.instance.isPausedDuetoAd)
         {
             if (_ad == null || isShowingAd || !IsAppOpenAdTimedOut)
             {
@@ -97,7 +97,7 @@ public class AppOpen_Code : MonoBehaviour
         }
         else
         {
-            AdMob._instance.isPausedDuetoAd = false;
+            AdsManager.instance.isPausedDuetoAd = false;
         }
     }
 
