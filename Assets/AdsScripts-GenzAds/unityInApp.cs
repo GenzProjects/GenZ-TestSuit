@@ -23,6 +23,13 @@ public class unityInApp : MonoBehaviour
     [Header("Behavior")]
     [SerializeField] private bool fetchPurchasesAfterProducts = true;
 
+    [Header("Screens (assign in Inspector, optional)")]
+    [Tooltip("Shown while a purchase is in progress, hidden when it completes or fails.")]
+    public GameObject loadingScreen;
+    [Tooltip("Shown when a purchase can't start or fails, hidden after Fail Screen Duration.")]
+    public GameObject failIAPScreen;
+    [SerializeField] private float failScreenDuration = 1f;
+
     private void Awake()
     {
         instance = this;
@@ -90,11 +97,13 @@ public class unityInApp : MonoBehaviour
         if (_store == null)
         {
             Debug.LogWarning("[IAP] Buy failed: Store not connected yet.");
+            ShowFailScreen();
             return;
         }
         if (string.IsNullOrEmpty(productId))
         {
             Debug.LogWarning("[IAP] Buy failed: empty productId.");
+            ShowFailScreen();
             return;
         }
 
@@ -103,13 +112,40 @@ public class unityInApp : MonoBehaviour
 
         try
         {
+            SetLoadingScreen(true);
+            // The store dialog sends the app to background; skip the App Open ad on return
+            // (AppOpen_Code.ShowAppOpenAdIfAvailable clears the flag).
+            if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = true;
             _store.PurchaseProduct(productId);
             Debug.Log($"[IAP] Purchasing: {productId}");
         }
         catch (Exception e)
         {
             Debug.LogError($"[IAP] PurchaseProduct threw: {e}");
+            _pendingValuesByProductId.Remove(productId);
+            if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = false; // store never opened
+            SetLoadingScreen(false);
+            ShowFailScreen();
         }
+    }
+
+    private void SetLoadingScreen(bool show)
+    {
+        if (loadingScreen != null) loadingScreen.SetActive(show);
+    }
+
+    private void ShowFailScreen()
+    {
+        if (failIAPScreen == null) return;
+        CancelInvoke(nameof(HideFailScreen));
+        failIAPScreen.transform.localScale = Vector3.one;
+        failIAPScreen.SetActive(true);
+        Invoke(nameof(HideFailScreen), failScreenDuration);
+    }
+
+    private void HideFailScreen()
+    {
+        if (failIAPScreen != null) failIAPScreen.SetActive(false);
     }
 
     public void RestorePurchases()
@@ -180,6 +216,7 @@ public class unityInApp : MonoBehaviour
 
         // Acknowledge so the store completes the purchase
         _store.ConfirmPurchase(order);
+        SetLoadingScreen(false);
     }
 
     private void OnPurchaseFailed(FailedOrder failed)
@@ -198,6 +235,9 @@ public class unityInApp : MonoBehaviour
 
         Debug.LogWarning($"[IAP] Purchase FAILED for '{pid}'. Reason: {reason}. Details: {details}");
         if (!string.IsNullOrEmpty(pid)) _pendingValuesByProductId.Remove(pid);
+
+        SetLoadingScreen(false);
+        ShowFailScreen();
     }
 
     private void OnStoreDisconnected(StoreConnectionFailureDescription desc)
