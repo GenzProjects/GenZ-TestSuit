@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dependencies>
+    <androidPackages>
+        <!-- AdSurge ADN, integrated as an AppLovin MAX Custom Network.
+             MAX dashboard Android adapter class name: com.odc.adapter.ODCAdapter
+             This is a custom network, so it is NOT managed by the AppLovin Integration
+             Manager - keep it here with the project-owned dependencies rather than under
+             Assets/MaxSdk/, so a MAX plugin update cannot remove it. -->
+        <androidPackage spec="com.adsurge.sdk:adapter-for-max:1.9.0.0" />
+    </androidPackages>
+</dependencies>
