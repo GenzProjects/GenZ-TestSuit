@@ -2,7 +2,13 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.iOS;
+
+#if UNITY_ANDROID
 using Google.Play.Review;
+#elif UNITY_IOS
+UnityEngine.iOS;
+#endif
 
 public class InAppReviewManager : MonoBehaviour
 {
@@ -17,7 +23,15 @@ public class InAppReviewManager : MonoBehaviour
     }
     public void Review()
     {
+#if UNITY_ANDROID
         StartCoroutine(RequestReview());
+#elif UNITY_IOS
+UnityEngine.iOS;
+         Device.RequestStoreReview();
+#endif
+
+       
+
     }
 
     IEnumerator RequestReview()
