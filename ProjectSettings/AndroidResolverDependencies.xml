@@ -3,6 +3,7 @@
     <package>androidx.constraintlayout:constraintlayout:2.1.4</package>
     <package>androidx.recyclerview:recyclerview:1.2.1</package>
     <package>com.adjust.sdk:adjust-android:5.0.0</package>
+    <package>com.adsurge.sdk:adapter-for-max:1.9.0.0</package>
     <package>com.android.installreferrer:installreferrer:2.2</package>
     <package>com.android.support:customtabs:28.+</package>
     <package>com.android.support:recyclerview-v7:28.+</package>
@@ -14,7 +15,6 @@
     <package>com.applovin.mediation:google-adapter:[23.6.0.0]</package>
     <package>com.applovin.mediation:google-ad-manager-adapter:[23.6.0.0]</package>
     <package>com.applovin.mediation:inmobi-adapter:10.8.0.0</package>
-    <package>com.applovin.mediation:ironsource-adapter:8.5.0.0.0</package>
     <package>com.applovin.mediation:mintegral-adapter:16.9.31.0</package>
     <package>com.applovin.mediation:smaato-adapter:22.7.2.3</package>
     <package>com.applovin.mediation:unityads-adapter:4.13.0.0</package>
@@ -41,6 +41,7 @@
     <package>com.google.flatbuffers:flatbuffers-java:1.12.0</package>
     <package>com.squareup.picasso:picasso:2.71828</package>
     <package>com.yandex.android:mobmetricalib:5.2.0</package>
+    <package>io.adn:adn-applovin-adapter:4.30.0.1</package>
   </packages>
   <files>
     <file>Assets/GeneratedLocalRepo/Firebase/m2repository/com/google/firebase/firebase-analytics-unity/12.8.0/firebase-analytics-unity-12.8.0.aar</file>
