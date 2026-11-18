@@ -33,9 +33,9 @@ public class Analytics : MonoBehaviour
     private void Start()
     {
         StartCoroutine(GenZLog.ProbeServers()); // Adjust + AppMetrica server answer, for the APK Test Suit
-
-        if (isNewUser)
-            AbTest();
+        //
+        // if (isNewUser)
+        //     AbTest();
     }
     
 
@@ -51,58 +51,56 @@ public class Analytics : MonoBehaviour
             "build=" + build + (settings != null && settings.UsePlayerSettingsBuildNumber ? " (Send Version on)" : " (from GA Settings)"));
     }
 
-    private void AbTest()
-    {
-        GameAnalytics.RemoteConfigsUpdated();
-        if (GameAnalytics.IsRemoteConfigsReady())
-        {
-            try
-            {
-                //=== Combine Ui Num
-                string val =
-                GameAnalytics.GetRemoteConfigsValueAsString("SelV", "a");
-                if (!string.IsNullOrEmpty(val))
-                {
-                    valSt = val;
-                    if (val == "b")         // Level b ==> Level 1 & 2 Part B
-                        PlayerPrefs.SetInt("SelArrangPref", 1);
-                    else if (val == "a")                   // Level a ==> Level 1 & 2 Part A
-                        PlayerPrefs.SetInt("SelArrangPref", 0);
-                }
-                else
-                {
-                    PlayerPrefs.SetInt("SelArrangPref", 0);
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.Log("Remoteconfig exception=>" + ex.ToString());
-                PlayerPrefs.SetInt("SelArrangPref", 0);
-            }
-            finally
-            {
-                //   GameManager.inst.AbTestResult();
-                PlayerPrefs.SetInt("SelArrangPref", 0);
-
-            }
-        }
-        else
-        {
-            if (rulesRecallTime < 3)
-            {
-                rulesRecallTime += 1;
-                Invoke(nameof(AbTest), 2f);
-            }
-            else
-            {
-                PlayerPrefs.SetInt("SelArrangPref", 0);
-            }
-        }
+    // private void AbTest()
+    // {
+    //     GameAnalytics.RemoteConfigsUpdated();
+    //     if (GameAnalytics.IsRemoteConfigsReady())
+    //     {
+    //         try
+    //         {
+    //             //=== Combine Ui Num
+    //             string val =
+    //             GameAnalytics.GetRemoteConfigsValueAsString("SelV", "a");
+    //             if (!string.IsNullOrEmpty(val))
+    //             {
+    //                 valSt = val;
+    //                 if (val == "b")         // Level b ==> Level 1 & 2 Part B
+    //                     PlayerPrefs.SetInt("SelArrangPref", 1);
+    //                 else if (val == "a")                   // Level a ==> Level 1 & 2 Part A
+    //                     PlayerPrefs.SetInt("SelArrangPref", 0);
+    //             }
+    //             else
+    //             {
+    //                 PlayerPrefs.SetInt("SelArrangPref", 0);
+    //             }
+    //         }
+    //         catch (Exception ex)
+    //         {
+    //             Debug.Log("Remoteconfig exception=>" + ex.ToString());
+    //             PlayerPrefs.SetInt("SelArrangPref", 0);
+    //         }
+    //         finally
+    //         {
+    //             //   GameManager.inst.AbTestResult();
+    //             PlayerPrefs.SetInt("SelArrangPref", 0);
+    //
+    //         }
+    //     }
+    //     else
+    //     {
+    //         if (rulesRecallTime < 3)
+    //         {
+    //             rulesRecallTime += 1;
+    //             Invoke(nameof(AbTest), 2f);
+    //         }
+    //         else
+    //         {
+    //             PlayerPrefs.SetInt("SelArrangPref", 0);
+    //         }
+    //     }
        
-    }
-
+    // }
 
     
-
     #endregion
 }
