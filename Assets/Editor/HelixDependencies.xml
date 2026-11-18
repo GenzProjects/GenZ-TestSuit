@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<dependencies>
+    <androidPackages>
+        <!-- Helix (Voodoo ADN), integrated as an AppLovin MAX Custom Network.
+             Guide: https://docs.helix.voodoo.io/monetization/integrate-the-sdk/applovin-max-adapter/unity-max-adapter
+             This is a custom network, so it is NOT managed by the AppLovin Integration
+             Manager - keep it here with the project-owned dependencies rather than under
+             Assets/MaxSdk/, so a MAX plugin update cannot remove it. -->
+        <androidPackage spec="io.adn:adn-applovin-adapter:4.30.0.1">
+            <repositories>
+                <repository>https://framework.voodoo-adn.com/android/release/apps</repository>
+            </repositories>
+        </androidPackage>
+    </androidPackages>
+</dependencies>
