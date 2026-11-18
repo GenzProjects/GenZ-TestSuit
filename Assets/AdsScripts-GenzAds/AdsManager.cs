@@ -160,6 +160,10 @@ public class AdsManager : MonoBehaviour
     {
         Debug.Log("Max Interstitial ad loaded");
         interRequestTime = 0;
+        
+        // #if UNITY_IOS
+        // AudioSettings.Reset(AudioSettings.GetConfiguration());
+        // #endif
     }
     private void OnInterstitialLoadFailedEvent(string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
     {
@@ -168,6 +172,10 @@ public class AdsManager : MonoBehaviour
         // interRequestTime += 1;
         Invoke(nameof(LoadInterstitial), 5f);
         Time.timeScale = 1;
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
     private void OnInterstitialAdFailedToDisplayEvent(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
     {
@@ -176,12 +184,20 @@ public class AdsManager : MonoBehaviour
         // interRequestTime += 1;
         Invoke(nameof(LoadInterstitial), 5f);
         Time.timeScale = 1;
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
     private void OnInterstitialHiddenEvent(string adUnitId, MaxSdkBase.AdInfo adInfo)
     {
         Invoke(nameof(LoadInterstitial), 0.5f);
         Time.timeScale = 1;
         AdsGapTimer.instance.ResetTimer();
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
 
     int currentCount = 0;
@@ -321,6 +337,10 @@ public class AdsManager : MonoBehaviour
     {
         print("RewardedAd Loaded event");
         rewardRequestTime = 0;
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
 
     private void OnRewardedAdLoadFailedEvent(string adUnitId, MaxSdkBase.ErrorInfo errorInfo)
@@ -331,6 +351,10 @@ public class AdsManager : MonoBehaviour
         //     return;
         // rewardRequestTime += 1;
         Invoke(nameof(LoadRewardedAd), 5f);
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
 
     private void OnRewardedAdFailedToDisplayEvent(string adUnitId, MaxSdkBase.ErrorInfo errorInfo, MaxSdkBase.AdInfo adInfo)
@@ -339,6 +363,10 @@ public class AdsManager : MonoBehaviour
         Callback = null;
         
         Invoke(nameof(LoadRewardedAd), 3f);
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
 
     private void OnRewardedAdHiddenEvent(string adUnitId, MaxSdkBase.AdInfo adInfo)
@@ -346,10 +374,19 @@ public class AdsManager : MonoBehaviour
         Callback?.Invoke(false);
         Callback = null;
         LoadRewardedAd();
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
     private void OnRewardedAdDismissedEvent(string adUnitId)
     {
         LoadRewardedAd();
+        
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
     private void OnRewardedAdReceivedRewardEvent(string adUnitId, MaxSdk.Reward reward, MaxSdkBase.AdInfo adInfo)
     {
@@ -358,6 +395,10 @@ public class AdsManager : MonoBehaviour
         _rewarded?.Invoke(); // a null callback would throw and skip the timer reset below
 
         AdsGapTimer.instance.ResetTimer();
+        
+        #if UNITY_IOS
+        AudioSettings.Reset(AudioSettings.GetConfiguration());
+        #endif
     }
     public void ShowRewardedAd(Rewarded rewarded)
     {
