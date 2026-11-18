@@ -29,6 +29,9 @@ public class unityInApp : MonoBehaviour
     [Tooltip("Shown when a purchase can't start or fails, hidden after Fail Screen Duration.")]
     public GameObject failIAPScreen;
     [SerializeField] private float failScreenDuration = 1f;
+    [Tooltip("Shown when a purchase succeeds and its reward is granted, hidden after Success Screen Duration.")]
+    public GameObject successIAPScreen;
+    [SerializeField] private float successScreenDuration = 1.5f;
 
     private void Awake()
     {
@@ -148,6 +151,21 @@ public class unityInApp : MonoBehaviour
         if (failIAPScreen != null) failIAPScreen.SetActive(false);
     }
 
+    private void ShowSuccessScreen()
+    {
+        if (successIAPScreen == null) return;
+        CancelInvoke(nameof(HideSuccessScreen));
+        HideFailScreen();
+        successIAPScreen.transform.localScale = Vector3.one;
+        successIAPScreen.SetActive(true);
+        Invoke(nameof(HideSuccessScreen), successScreenDuration);
+    }
+
+    private void HideSuccessScreen()
+    {
+        if (successIAPScreen != null) successIAPScreen.SetActive(false);
+    }
+
     public void RestorePurchases()
     {
 #if UNITY_IOS || UNITY_STANDALONE_OSX || UNITY_TVOS || UNITY_VISIONOS
@@ -208,15 +226,18 @@ public class unityInApp : MonoBehaviour
         Debug.Log($"[IAP] OnPurchasePending for product: {productId ?? "(unknown)"}");
 
         // Grant your reward BEFORE confirming
+        bool granted = false;
         if (!string.IsNullOrEmpty(productId) && _pendingValuesByProductId.TryGetValue(productId, out var value))
         {
             AdsIds.instance.AfterPurchased(value);
             _pendingValuesByProductId.Remove(productId);
+            granted = true;
         }
 
         // Acknowledge so the store completes the purchase
         _store.ConfirmPurchase(order);
         SetLoadingScreen(false);
+        if (granted) ShowSuccessScreen(); // only for a purchase made in this session, not a restored order
     }
 
     private void OnPurchaseFailed(FailedOrder failed)
