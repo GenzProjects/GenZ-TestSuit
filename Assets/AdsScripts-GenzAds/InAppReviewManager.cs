@@ -34,10 +34,16 @@ UnityEngine.iOS;
 
     }
 
+    // Seconds (real time) after the review flow ends before the App Open skip flag is cleared, if
+    // returning to the game didn't already clear it. The review card is an overlay, so the app
+    // often never goes to background, and Google's quota often shows no card at all.
+    private const float AppOpenSkipClearDelay = 2f;
+
     IEnumerator RequestReview()
     {
-
-        AdsManager.instance.isPausedDuetoAd = true;
+        // Skip the App Open ad when the player returns from the review card
+        // (AppOpen_Code.ShowAppOpenAdIfAvailable clears the flag).
+        if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = true;
         _reviewManager = new ReviewManager();
 
         var requestFlowOperation = _reviewManager.RequestReviewFlow();
@@ -45,6 +51,7 @@ UnityEngine.iOS;
         if (requestFlowOperation.Error != ReviewErrorCode.NoError)
         {
             // Log error. For example, using requestFlowOperation.Error.ToString().
+            ClearAppOpenSkip(); // nothing was shown
             yield break;
         }
         _playReviewInfo = requestFlowOperation.GetResult();
@@ -53,12 +60,14 @@ UnityEngine.iOS;
         var launchFlowOperation = _reviewManager.LaunchReviewFlow(_playReviewInfo);
         yield return launchFlowOperation;
         _playReviewInfo = null; // Reset the object
-        if (launchFlowOperation.Error != ReviewErrorCode.NoError)
-        {
-            // Log error. For example, using requestFlowOperation.Error.ToString().
-            yield break;
-        }
 
+        yield return new WaitForSecondsRealtime(AppOpenSkipClearDelay);
+        ClearAppOpenSkip();
+    }
+
+    private void ClearAppOpenSkip()
+    {
+        if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = false;
     }
 
 }
