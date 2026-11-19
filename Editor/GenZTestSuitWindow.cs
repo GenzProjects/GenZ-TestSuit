@@ -340,6 +340,7 @@ namespace GenZ.TestSuit
                 EditorGUILayout.HelpBox($"Results from the last run ({report.time:dd MMM, HH:mm}), kept after the scripts reloaded. Run the suite again to check your changes.", MessageType.None);
             DrawStepper();
             DrawAutoApply();
+            DrawGaFormatFix();
             DrawSummary();
             scroll = EditorGUILayout.BeginScrollView(scroll);
             DrawResults();
@@ -488,6 +489,64 @@ namespace GenZ.TestSuit
             }
         }
 
+        // ---------------------------------------------------------------- Fix GA Ad Formats
+
+        // Shown when GAAdMobIntegration.cs sends a different ad format string than GAMaxIntegration.cs
+        // (e.g. AdMob "INTERSTITIAL", MAX "INTER"): GameAnalytics would split that format's revenue in two.
+        void DrawGaFormatFix()
+        {
+            var fixes = report?.gaFormatFixes;
+            if (fixes == null || fixes.Count == 0) return;
+            using (new EditorGUILayout.HorizontalScope(EditorStyles.helpBox))
+            {
+                using (new EditorGUILayout.VerticalScope())
+                {
+                    GUILayout.Label($"<color={Hex(FailColor)}><b>GameAnalytics gets two different strings</b></color> for the same ad format from MAX and AdMob.",
+                        filterLabelStyle);
+                    GUILayout.Label(string.Join("  ·  ", fixes.Select(f => $"{f.label.Replace("GameAnalytics AdMob ", "").Replace(" format", "")}: AdMob \"{f.current}\" → MAX \"{f.expected}\"")),
+                        EditorStyles.wordWrappedMiniLabel);
+                }
+                GUILayout.FlexibleSpace();
+                using (new EditorGUILayout.VerticalScope())
+                {
+                    GUILayout.FlexibleSpace();
+                    if (SolidButton(30, "Fix GA Ad Formats",
+                            "Set the ad format strings in GAAdMobIntegration.cs to the ones GAMaxIntegration.cs sends, so GameAnalytics reports AdMob and MAX under one format:\n"
+                            + string.Join("\n", fixes.Select(f => $"• {f.label}: \"{f.current}\" → \"{f.expected}\"")) + "\nShows the change and asks first.",
+                            CorrectColor, "d_Valid", "Valid"))
+                        EditorApplication.delayCall += FixGaAdFormats;
+                    GUILayout.FlexibleSpace();
+                }
+            }
+        }
+
+        void FixGaAdFormats()
+        {
+            if (report == null || report.gaFormatFixes.Count == 0) return;
+            const string title = "Fix GA Ad Formats";
+            if (EditorApplication.isPlayingOrWillChangePlaymode)
+            {
+                EditorUtility.DisplayDialog(title, "Stop Play mode first.", "OK");
+                return;
+            }
+            var fixes = report.gaFormatFixes.ToList();
+            var msg = "GameAnalytics gets two different strings for these ad formats. AdMob's will be set to MAX's:\n\n"
+                      + string.Join("\n", fixes.Select(f => $"• {f.label}\n    \"{f.current}\"  →  \"{f.expected}\"   ({f.Where})"))
+                      + "\n\nThe script is edited in place (it's in the GameAnalytics SDK folder: reimporting or updating GameAnalytics brings the old strings back, so run the suite after an update).";
+            if (!EditorUtility.DisplayDialog(title, msg, "Fix", "Cancel")) return;
+
+            var result = GenZIdFixer.ApplyOnLines(fixes);
+            foreach (var a in result.applied) Debug.Log("[GenZ Test Suit] Fix GA Ad Formats: " + a);
+            foreach (var f in result.failed) Debug.LogWarning("[GenZ Test Suit] Fix GA Ad Formats failed: " + f);
+
+            RunEditorSuite(); // verify
+
+            var summary = $"{result.applied.Count} string{(result.applied.Count == 1 ? "" : "s")} fixed.";
+            if (result.failed.Count > 0) summary += $"\n\n{result.failed.Count} couldn't be fixed:\n" + string.Join("\n", result.failed);
+            summary += $"\n\nRe-checked: {report.gaFormatFixes.Count} ad format{(report.gaFormatFixes.Count == 1 ? "" : "s")} still differ.";
+            EditorUtility.DisplayDialog(title, summary, "OK");
+        }
+
         static readonly Color AccentColor = new Color(0.16f, 0.47f, 0.80f);
 
         static readonly Color CorrectColor = new Color(0.85f, 0.40f, 0.12f); // warm orange: "fix these"
@@ -594,7 +653,10 @@ namespace GenZ.TestSuit
             var msg = "These IDs will be set to the Google Sheet values for " + GamePackage + ":\n\n"
                       + string.Join("\n", lines)
                       + (fixes.Count > MaxLines ? $"\n…and {fixes.Count - MaxLines} more (see the Console after applying)" : "")
-                      + "\n\nSettings assets and SDK scenes that aren't open are saved. A scene you have open is only marked as modified — save it yourself.";
+                      + "\n\nSettings assets and SDK scenes that aren't open are saved. A scene you have open is only marked as modified — save it yourself."
+                      + (fixes.Any(f => !string.IsNullOrEmpty(f.codeFile))
+                          ? "\n\nScripts: " + string.Join(", ", fixes.Where(f => !string.IsNullOrEmpty(f.codeFile)).Select(f => f.Where).Distinct()) + " are edited in place, and Unity recompiles."
+                          : "");
             if (!EditorUtility.DisplayDialog(title, msg, "Apply", "Cancel")) return;
 
             var result = GenZIdFixer.Apply(fixes);
@@ -606,6 +668,7 @@ namespace GenZ.TestSuit
             var summary = $"{result.applied.Count} ID{(result.applied.Count == 1 ? "" : "s")} applied.";
             if (result.failed.Count > 0) summary += $"\n\n{result.failed.Count} couldn't be applied:\n" + string.Join("\n", result.failed.Take(10));
             if (result.unsavedScenes.Count > 0) summary += "\n\nSave these open scenes to keep the change:\n" + string.Join("\n", result.unsavedScenes);
+            if (result.scripts.Count > 0) summary += "\n\nScripts edited (Unity recompiles):\n" + string.Join("\n", result.scripts);
             summary += $"\n\nRe-checked: {report.idFixes.Count} ID{(report.idFixes.Count == 1 ? "" : "s")} still differ from the sheet.";
             EditorUtility.DisplayDialog(title, summary, "OK");
         }

@@ -11,6 +11,13 @@ namespace GenZ.TestSuit
     {
         public const string Version = "1.0";
         public const string Name = "GenZ-TestSuit-v" + Version;
+
+        /// <summary>
+        /// The GenZ ad scripts (AdsScripts-GenzAds) version this suite checks for: every script there starts with
+        /// "// GenzMonetization-v&lt;version&gt;". Raise it with each GenZ Ads release (CodeCheckSettings.adsScriptsVersion overrides it per project).
+        /// </summary>
+        public const string AdsScriptsVersion = "1.33";
+        public const string AdsScriptsHeader = "GenzMonetization-v";
     }
 
     /// <summary>How a field's value is validated. Every ID kind also fails on any whitespace.</summary>
@@ -75,6 +82,12 @@ namespace GenZ.TestSuit
             "Plugins", "GoogleMobileAds", "MaxSdk", "Firebase", "GameAnalytics", "Adjust", "AppMetrica",
             "ExternalDependencyManager", "Dreamteck", "Demigiant", "NiceVibrations", "TextMesh Pro", "Kits"
         };
+        [Tooltip("GenZ ad scripts version every script must state on its first line ('// GenzMonetization-v<version>'). "
+                 + "Empty = the version this suite was built for (GenZTestSuitInfo.AdsScriptsVersion).")]
+        public string adsScriptsVersion = "";
+        [Tooltip("Flag that makes the App Open ad skip one return to the game. Purchases (PurchaseProduct / InitiatePurchase) and the "
+                 + "in-app review (LaunchReviewFlow) must set it, and clear it again after their flow ends. Empty = isPausedDuetoAd.")]
+        public string[] appOpenSkipFlags = { "isPausedDuetoAd" };
     }
 
     /// <summary>Step 3: Taichi 1.0 (revenue threshold → custom_ad_impression) and 2.0 (impression count → count_ad_impression).</summary>
@@ -122,6 +135,40 @@ namespace GenZ.TestSuit
         };
         [Tooltip("Firebase modules the game uses (DLL names without .dll).")]
         public string[] firebaseModules = { "Firebase.App", "Firebase.Analytics", "Firebase.RemoteConfig" };
+        [Tooltip("GameAnalytics ad revenue format strings '<Format>|<string>', used only when GAMaxIntegration.cs can't be read. "
+                 + "Normally GAAdMobIntegration.cs is compared with the strings GAMaxIntegration.cs sends.")]
+        public string[] gaAdFormatFallback = { "Interstitial|INTER", "Rewarded|REWARDED", "Banner|BANNER", "App Open|APP_OPEN" };
+        [Tooltip("AppLovin MAX adapters every game must have: '<Network>|<group:artifact>' (Android Maven package, version ignored). "
+                 + "A missing one fails. Custom networks (AdSurge, Helix) come from their own *Dependencies.xml, not the Integration Manager.")]
+        public string[] maxAdapters =
+        {
+            "BidMachine|com.applovin.mediation:bidmachine-adapter",
+            "Bigo Ads|com.applovin.mediation:bigoads-adapter",
+            "Pangle (ByteDance)|com.applovin.mediation:bytedance-adapter",
+            "Meta Audience Network (Facebook)|com.applovin.mediation:facebook-adapter",
+            "DT Exchange (Fyber)|com.applovin.mediation:fyber-adapter",
+            "Google AdMob|com.applovin.mediation:google-adapter",
+            "Google Ad Manager|com.applovin.mediation:google-ad-manager-adapter",
+            "InMobi|com.applovin.mediation:inmobi-adapter",
+            "Mintegral|com.applovin.mediation:mintegral-adapter",
+            "Smaato|com.applovin.mediation:smaato-adapter",
+            "Unity Ads|com.applovin.mediation:unityads-adapter",
+            "Liftoff Monetize (Vungle)|com.applovin.mediation:vungle-adapter",
+            "Yandex|com.applovin.mediation:yandex-adapter",
+            "YSO Network|com.applovin.mediation:yso-network-adapter",
+            "AdSurge (custom network)|com.adsurge.sdk:adapter-for-max",
+            "Helix / Voodoo ADN (custom network)|io.adn:adn-applovin-adapter",
+        };
+        [Tooltip("Networks that must not be in the build: '<Network>|<group:artifact>', or '<Network>|<group>:' for any package of that group. "
+                 + "Also fails when a MaxSdk/Mediation/<Network> folder is still there.")]
+        public string[] forbiddenAdapters =
+        {
+            "IronSource|com.applovin.mediation:ironsource-adapter",
+            "IronSource SDK|com.ironsource.sdk:",
+            "IronSource / LevelPlay SDK|com.unity3d.ads-mediation:",
+        };
+        [Tooltip("Regex on '<group>:<artifact>' for what counts as an ad network adapter. One that isn't in Max Adapters or Forbidden Adapters is a warning.")]
+        public string adapterPattern = @"^com\.applovin\.mediation:[\w.-]+-adapter$|adapter-for-max|applovin-adapter|max-adapter";
     }
 
     /// <summary>Step 2: the Android Player Settings the studio's release builds must have.</summary>
@@ -142,8 +189,12 @@ namespace GenZ.TestSuit
         public string[] targetArchitectures = { "ARMv7", "ARM64" };
         [Tooltip("Minimum API level: 24 = Android 7.0.")]
         public int minSdk = 24;
+        [Tooltip("Unity 6 and newer: the minimum API levels that pass (24 = Android 7.0, 25 = Android 7.1). Empty = use Min Sdk.")]
+        public int[] minSdkUnity6 = { 24, 25 };
         [Tooltip("Target API level: 36 = Android 16.0.")]
         public int targetSdk = 36;
+        [Tooltip("Unity 6 and newer: Player Settings → Splash Image → Show Splash Screen must be this. Not checked on older Unity.")]
+        public bool showSplashScreenUnity6 = false;
     }
 
     /// <summary>Android signing: the release keystore is used, and it's the one the studio sheet names for this game.</summary>

@@ -140,20 +140,44 @@ namespace GenZ.TestSuit
                     }
                     GenZCodeChecks.RunTaichi(report, codeSettings, taichi, taichiIn, model);
 
-                    // Auto Apply can write the sheet's Taichi 2.0 count into the Inspector default.
-                    if (taichiIn.taichi2DefaultProperty != null && taichiIn.sheetCount != null
-                        && int.TryParse(taichiIn.sheetCount.Trim(), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var sheetImp)
-                        && taichiIn.taichi2Default != sheetImp.ToString(System.Globalization.CultureInfo.InvariantCulture))
-                        report.idFixes.Add(new IdFix
+                    // Auto Apply can write the sheet's Taichi 2.0 count into the Inspector default or, for a game
+                    // without one (no RemoteConfigManager), into the number written in code.
+                    var inv = System.Globalization.CultureInfo.InvariantCulture;
+                    if (taichiIn.sheetCount != null
+                        && int.TryParse(taichiIn.sheetCount.Trim(), System.Globalization.NumberStyles.Integer, inv, out var sheetImp))
+                    {
+                        var sheetText = sheetImp.ToString(inv);
+                        if (taichiIn.taichi2DefaultProperty != null)
                         {
-                            label = "Taichi 2.0 › default impressions",
-                            current = taichiIn.taichi2Default,
-                            expected = sheetImp.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                            propertyPath = taichiIn.taichi2DefaultProperty,
-                            scenePath = taichiIn.defaultFile,
-                            objectPath = taichiIn.defaultObjectPath,
-                            componentType = taichiIn.defaultComponent
-                        });
+                            if (taichiIn.taichi2Default != sheetText)
+                                report.idFixes.Add(new IdFix
+                                {
+                                    label = "Taichi 2.0 › default impressions",
+                                    current = taichiIn.taichi2Default,
+                                    expected = sheetText,
+                                    propertyPath = taichiIn.taichi2DefaultProperty,
+                                    scenePath = taichiIn.defaultFile,
+                                    objectPath = taichiIn.defaultObjectPath,
+                                    componentType = taichiIn.defaultComponent
+                                });
+                        }
+                        else if (taichiIn.taichi2CodeFile != null)
+                        {
+                            var suffix = Regex.Match(taichiIn.taichi2CodeValue, @"[lLuUfFdDmM]+$").Value; // keep 50L a long
+                            var number = taichiIn.taichi2CodeValue.Substring(0, taichiIn.taichi2CodeValue.Length - suffix.Length);
+                            if (!double.TryParse(number, System.Globalization.NumberStyles.Float, inv, out var codeImp) || Math.Abs(codeImp - sheetImp) > 1e-9)
+                                report.idFixes.Add(new IdFix
+                                {
+                                    label = "Taichi 2.0 › default impressions (code)",
+                                    current = taichiIn.taichi2CodeValue,
+                                    expected = sheetText + suffix,
+                                    codeFile = taichiIn.taichi2CodeFile,
+                                    codeLine = taichiIn.taichi2CodeLine,
+                                    codeContext = taichiIn.taichi2CodeContext,
+                                    codeValue = taichiIn.taichi2CodeValue
+                                });
+                        }
+                    }
                 }
                 if (codeSettings.enabled)
                     GenZCodeChecks.Run(report, codeSettings, model);

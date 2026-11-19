@@ -57,9 +57,15 @@ namespace GenZ.TestSuit
         public bool secret;           // shorten in dialogs and logs
         public string propertyPath;   // serialized property to set
         public string assetPath;      // settings asset, or…
-        public string scenePath, objectPath, componentType; // …a component in a scene
+        public string scenePath, objectPath, componentType; // …a component in a scene, or…
+        public string codeFile;       // …a number written in a script (Assets/...): the Taichi 2.0 default without an Inspector field
+        public int codeLine;
+        public string codeContext;    // its line up to the end of the number, exactly as the check read it
+        public string codeValue;      // the number as written, replaced by expected
 
-        public string Where => !string.IsNullOrEmpty(assetPath) ? assetPath : $"{scenePath} › {objectPath} ({componentType})";
+        public string Where => !string.IsNullOrEmpty(assetPath) ? assetPath
+                             : !string.IsNullOrEmpty(codeFile) ? $"{codeFile}:{codeLine}"
+                             : $"{scenePath} › {objectPath} ({componentType})";
     }
 
     [Serializable]
@@ -102,6 +108,8 @@ namespace GenZ.TestSuit
         public List<ReportSection> sections = new List<ReportSection>();
         /// <summary>IDs the sheet says are wrong or empty, with where to write the sheet value.</summary>
         public List<IdFix> idFixes = new List<IdFix>();
+        /// <summary>GAAdMobIntegration.cs ad format strings that differ from GAMaxIntegration.cs ("Fix GA Ad Formats").</summary>
+        public List<IdFix> gaFormatFixes = new List<IdFix>();
 
         /// <summary>True for a GenZ-ApkTestSuit report: it has the APK steps instead of the Editor ones.</summary>
         public bool apk;

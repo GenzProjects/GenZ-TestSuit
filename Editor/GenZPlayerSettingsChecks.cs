@@ -46,13 +46,34 @@ namespace GenZ.TestSuit
                 : string.Join("; ", new[] { missing.Count > 0 ? "Tick " + string.Join(", ", missing) : null, extra.Count > 0 ? "Untick " + string.Join(", ", extra) : null }.Where(x => x != null))
                   + $": {Where} → Configuration → Target Architectures");
 
-            // API levels
+            // API levels (Unity 6 and newer may also use the levels in minSdkUnity6, e.g. 25)
+            bool unity6 = IsUnity6OrNewer();
             int min = (int)PlayerSettings.Android.minSdkVersion;
-            sec.Add("Minimum API Level", min == r.minSdk ? CheckStatus.Pass : CheckStatus.Fail, ApiName(min),
-                min == r.minSdk ? "" : $"Must be {ApiName(r.minSdk)}: {Where} → Identification → Minimum API Level");
+            var allowedMin = unity6 && r.minSdkUnity6 != null && r.minSdkUnity6.Length > 0 ? r.minSdkUnity6 : new[] { r.minSdk };
+            bool minOk = allowedMin.Contains(min);
+            string allowedText = string.Join(" or ", allowedMin.Select(ApiName));
+            sec.Add("Minimum API Level", minOk ? CheckStatus.Pass : CheckStatus.Fail, ApiName(min),
+                minOk ? (allowedMin.Length > 1 ? $"Unity 6: {allowedText} allowed" : "")
+                      : $"Must be {allowedText}{(unity6 && allowedMin.Length > 1 ? " (Unity 6)" : "")}: {Where} → Identification → Minimum API Level");
             int target = (int)PlayerSettings.Android.targetSdkVersion;
             sec.Add("Target API Level", target == r.targetSdk ? CheckStatus.Pass : CheckStatus.Fail, target == 0 ? "Automatic (highest installed)" : ApiName(target),
                 target == r.targetSdk ? "" : $"Must be {ApiName(r.targetSdk)}: {Where} → Identification → Target API Level");
+
+            // Unity splash screen: Unity 6 lets every license turn it off, so a release build must have it off.
+            if (unity6)
+            {
+                bool show = PlayerSettings.SplashScreen.show;
+                bool showOk = show == r.showSplashScreenUnity6;
+                sec.Add("Show Splash Screen", showOk ? CheckStatus.Pass : CheckStatus.Fail, OnOff(show),
+                    showOk ? "Unity 6" : $"Must be {OnOff(r.showSplashScreenUnity6)} in Unity 6: Player Settings → Splash Image → Show Splash Screen");
+            }
+        }
+
+        /// <summary>Unity 6 (6000.x) or newer, read from the running Editor's version.</summary>
+        static bool IsUnity6OrNewer()
+        {
+            var major = UnityEngine.Application.unityVersion.Split('.')[0];
+            return int.TryParse(major, out var m) && m >= 6000;
         }
 
         static void Bool(ReportSection sec, string label, bool value, bool expected) =>

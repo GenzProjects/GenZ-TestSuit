@@ -54,6 +54,8 @@ namespace GenZ.TestSuit
         const string SectionRemote = "Code · Remote Config → AdsGapTimer";
         const string SectionRemoteDefaults = "Code · Remote Config defaults";
         const string SectionLogic = "Code · Other logic checks";
+        const string SectionAdsVersion = "Code · Ad scripts version (GenzMonetization)";
+        const string SectionAppOpenSkip = "Code · No App Open ad after a purchase or review";
 
         class Ctx
         {
@@ -103,6 +105,7 @@ namespace GenZ.TestSuit
         {
             var ctx = MakeCtx(settings, model ?? GenZSourceModel.Load(settings.excludeFolders));
             CheckScripts(report.Section(SectionScripts, TestStage.Integration), ctx);
+            CheckAdsScriptsVersion(report.Section(SectionAdsVersion, TestStage.AdCalling), ctx);
             CheckWaterfall(report.Section(SectionWaterfall, TestStage.AdCalling), ctx);
             CheckBanner(report.Section(SectionBanner, TestStage.AdCalling), ctx);
             CheckReloads(report.Section(SectionReload, TestStage.AdCalling), ctx);
@@ -110,8 +113,125 @@ namespace GenZ.TestSuit
             CheckTimerResets(report.Section(SectionTimer, TestStage.AdCalling), report.Section(SectionRewardCallback, TestStage.AdCalling), ctx);
             CheckRemoteConfig(report.Section(SectionRemote, TestStage.AdCalling), ctx);
             CheckRemoteDefaults(report.Section(SectionRemoteDefaults, TestStage.AdCalling), ctx);
+            CheckAppOpenSkip(report.Section(SectionAppOpenSkip, TestStage.AdCalling), ctx);
             CheckLogic(report.Section(SectionLogic, TestStage.AdCalling), ctx);
         }
+
+        // ================================================================= ad scripts version
+
+        // Every script in the GenZ ad scripts folder starts with "// GenzMonetization-v1.33". All must state the same
+        // version (a script from another release mixed in fails), and it must be the version this suite expects.
+        // Scripts from before v1.33 have no header at all: that's a warning, so older games still pass (plug and play).
+        static void CheckAdsScriptsVersion(ReportSection sec, Ctx ctx)
+        {
+            string expected = string.IsNullOrWhiteSpace(ctx.s.adsScriptsVersion) ? GenZTestSuitInfo.AdsScriptsVersion : ctx.s.adsScriptsVersion.Trim().TrimStart('v', 'V');
+            string header = GenZTestSuitInfo.AdsScriptsHeader;
+            var headerRx = new Regex(@"^\s*//\s*" + Regex.Escape(header) + @"(\d+(?:\.\d+)*)\b", RegexOptions.IgnoreCase);
+
+            var folder = AdsScriptsFolder(ctx);
+            if (folder == null)
+            {
+                sec.Add("Ad scripts folder", CheckStatus.Warn, "not found",
+                    "Couldn't find the GenZ ad scripts folder (the folder with AdsManager.cs, or one named AdsScripts…): versions not checked");
+                return;
+            }
+
+            // file → version ("" = no header)
+            var versions = new List<(string file, string version)>();
+            foreach (var full in System.IO.Directory.GetFiles(folder, "*.cs", System.IO.SearchOption.AllDirectories).OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+            {
+                var path = full.Replace('\\', '/');
+                if (path.IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                var first = System.IO.File.ReadLines(full).Select(l => l.TrimStart('﻿')).FirstOrDefault(l => l.Trim().Length > 0) ?? "";
+                var m = headerRx.Match(first);
+                versions.Add((path, m.Success ? m.Groups[1].Value : ""));
+            }
+            if (versions.Count == 0)
+            {
+                sec.Add("Ad scripts folder", CheckStatus.Warn, folder, "No scripts in the ad scripts folder");
+                return;
+            }
+
+            var stated = versions.Where(v => v.version.Length > 0).ToList();
+            string shortList(IEnumerable<(string file, string version)> list) =>
+                string.Join(", ", list.Take(8).Select(v => System.IO.Path.GetFileName(v.file))) + (list.Count() > 8 ? $" …+{list.Count() - 8}" : "");
+
+            if (stated.Count == 0)
+            {
+                sec.Add("Version header", CheckStatus.Warn, "none",
+                    $"No script in {folder} starts with \"// {header}…\": these ad scripts are from before v1.33. Update them to {header}{expected}");
+                return;
+            }
+
+            // The scripts' version = the one most scripts state; every other script is out of line.
+            var main = stated.GroupBy(v => v.version).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key, VersionComparer).First().Key;
+            var others = versions.Where(v => v.version != main).ToList();
+            var summary = string.Join(", ", versions.GroupBy(v => v.version).OrderByDescending(g => g.Count())
+                .Select(g => (g.Key.Length > 0 ? "v" + g.Key : "no header") + " ×" + g.Count()));
+
+            if (others.Count == 0)
+                sec.Add("Same version in every script", CheckStatus.Pass, $"v{main} ×{versions.Count}",
+                    $"All {versions.Count} scripts in {folder} start with // {header}{main}");
+            else
+            {
+                sec.Add("Same version in every script", CheckStatus.Fail, summary,
+                    $"{others.Count} of {versions.Count} scripts in {folder} aren't {header}{main}: {shortList(others)}. "
+                    + "Mixed versions mean some scripts were copied from another release: replace the whole folder with one GenZ Ads release");
+                foreach (var o in others.Take(20))
+                    sec.Add("Version · " + System.IO.Path.GetFileName(o.file), CheckStatus.Fail, o.version.Length > 0 ? "v" + o.version : "no header",
+                        o.version.Length > 0 ? $"States {header}{o.version}; the other scripts are {header}{main}"
+                                             : $"First line isn't \"// {header}{main}\": a script from another release, or the header was removed",
+                        o.file, 1);
+            }
+
+            int cmp = VersionComparer.Compare(main, expected);
+            if (cmp == 0)
+                sec.Add("Expected version", CheckStatus.Pass, $"v{main}", $"Matches the GenZ Ads version this suite checks for ({header}{expected})");
+            else if (cmp < 0)
+                sec.Add("Expected version", CheckStatus.Warn, $"v{main} < v{expected}",
+                    $"The ad scripts are {header}{main}, older than {header}{expected}: update AdsScripts-GenzAds to the latest GenZ Ads release");
+            else
+                sec.Add("Expected version", CheckStatus.Info, $"v{main} > v{expected}",
+                    $"The ad scripts are newer ({header}{main}) than this suite knows ({header}{expected}): update the GenZ Test Suit package");
+
+            // Release.txt's newest entry ("GenZ Ads v1.33 …") should be the same release.
+            var release = System.IO.Path.Combine(folder, "Release.txt");
+            if (System.IO.File.Exists(release))
+            {
+                var rm = Regex.Match(System.IO.File.ReadAllText(release), @"\bv(\d+(?:\.\d+)+)");
+                if (rm.Success)
+                {
+                    bool same = VersionComparer.Compare(rm.Groups[1].Value, main) == 0;
+                    sec.Add("Release.txt", same ? CheckStatus.Pass : CheckStatus.Warn, "v" + rm.Groups[1].Value,
+                        same ? "Its newest entry is the same version as the scripts"
+                             : $"Its newest entry is v{rm.Groups[1].Value} but the scripts say {header}{main}",
+                        release.Replace('\\', '/'), 1);
+                }
+            }
+        }
+
+        // The folder holding AdsManager (the main ad script); else a folder under Assets named AdsScripts….
+        static string AdsScriptsFolder(Ctx ctx)
+        {
+            var manager = ctx.model.classes.FirstOrDefault(c => string.Equals(c.name, "AdsManager", StringComparison.OrdinalIgnoreCase));
+            if (manager != null) return System.IO.Path.GetDirectoryName(manager.file.path)?.Replace('\\', '/');
+            return System.IO.Directory.GetDirectories("Assets", "AdsScripts*", System.IO.SearchOption.AllDirectories)
+                .Select(d => d.Replace('\\', '/')).Where(d => d.IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) < 0)
+                .OrderBy(d => d.Length).FirstOrDefault();
+        }
+
+        // "1.33" vs "1.4": compared part by part as integers (1.33 is newer than 1.4, as the studio numbers releases).
+        static readonly Comparer<string> VersionComparer = Comparer<string>.Create((a, b) =>
+        {
+            var pa = (a ?? "").Split('.'); var pb = (b ?? "").Split('.');
+            for (int i = 0; i < Math.Max(pa.Length, pb.Length); i++)
+            {
+                int x = i < pa.Length && int.TryParse(pa[i], out var xa) ? xa : 0;
+                int y = i < pb.Length && int.TryParse(pb[i], out var yb) ? yb : 0;
+                if (x != y) return x.CompareTo(y);
+            }
+            return 0;
+        });
 
         static Ctx MakeCtx(CodeCheckSettings settings, GenZSourceModel model)
         {
@@ -1047,6 +1167,195 @@ namespace GenZ.TestSuit
             }
             return null;
         }
+
+        // ================================================================= App Open skipped after purchase / review
+
+        static readonly Regex PurchaseCall = new Regex(@"\.\s*(PurchaseProduct|InitiatePurchase)\s*\(");
+        static readonly Regex ReviewLaunch = new Regex(@"\bLaunchReviewFlow\s*\(");
+        static readonly Regex DelayCall = new Regex(@"\bWaitForSeconds(Realtime)?\b|\bInvoke\s*\(");
+        static readonly Regex RealtimeDelay = new Regex(@"\bWaitForSecondsRealtime\b");
+        static readonly Regex EarlyExit = new Regex(@"\byield\s+break\s*;|\breturn\s*;");
+
+        // The store dialog and the review card are overlays: coming back from them must not show an App Open ad.
+        // The purchase / review sets the skip flag the App Open ad checks (isPausedDuetoAd), and clears it again
+        // after its flow ends, a moment later and in real time: the overlay often doesn't send the app to background,
+        // so the App Open ad never clears it, and a stuck flag skips the next real App Open.
+        // The purchase side and the clears are new in GenZ Ads v1.33, so a v1.32 game gets warnings, not failures.
+        static void CheckAppOpenSkip(ReportSection sec, Ctx c)
+        {
+            var flags = (c.s.appOpenSkipFlags ?? new string[0]).Where(f => !string.IsNullOrWhiteSpace(f)).Select(f => f.Trim()).ToArray();
+            if (flags.Length == 0) flags = new[] { "isPausedDuetoAd" };
+            var alt = string.Join("|", flags.Select(Regex.Escape));
+            var setRx = new Regex(@"\b(" + alt + @")\s*=\s*true\b");
+            var clearRx = new Regex(@"\b(" + alt + @")\s*=\s*false\b");
+            var readRx = new Regex(@"\b(" + alt + @")\b(?!\s*=(?!=))");
+            string flagName = flags[0];
+
+            // 1. The App Open ad checks the flag before showing.
+            var appOpen = c.ad.FirstOrDefault(k => k.methods.Any(m => AdmobAppOpenLoad.IsMatch(m.Code)));
+            if (appOpen == null)
+            {
+                sec.Add("App Open ad", CheckStatus.Info, "none", "No AppOpenAd.Load in the ad scripts: nothing to check");
+                return;
+            }
+            var showers = appOpen.methods.Where(m => Regex.IsMatch(m.Code, @"\.\s*Show\s*\(")).ToList();
+            var unguarded = showers.Where(m => !readRx.IsMatch(m.Code)).ToList();
+            if (showers.Count == 0)
+                sec.Add("App Open checks the skip flag", CheckStatus.Info, appOpen.name, $"No .Show( call found in {appOpen.name}",
+                    appOpen.file.path, appOpen.file.LineOf(appOpen.bodyStart));
+            else if (unguarded.Count == 0)
+                sec.Add("App Open checks the skip flag", CheckStatus.Pass, flagName,
+                    $"{string.Join(", ", showers.Select(m => m.FullName))} checks {flagName} before showing", showers[0].File.path, showers[0].Line);
+            else
+                foreach (var m in unguarded)
+                    sec.Add($"{m.FullName}: checks the skip flag", CheckStatus.Fail, "not checked",
+                        $"Shows the App Open ad without checking {flagName}: purchases and the in-app review can't stop it, so it shows when the player returns from them",
+                        m.File.path, m.Line);
+
+            // Methods that clear the flag (outside the App Open ad): a clear may go through a helper such as ClearAppOpenSkip().
+            var clearers = c.model.Methods.Where(m => clearRx.IsMatch(m.Code) && m.owner != appOpen).ToList();
+            Regex ClearOrCall(ClassInfo owner)
+            {
+                var names = clearers.Where(m => m.owner == owner).Select(m => Regex.Escape(m.name)).Distinct().ToList();
+                return new Regex(clearRx + (names.Count > 0 ? @"|\b(" + string.Join("|", names) + @")\s*\(" : ""));
+            }
+
+            // 2. Purchases.
+            // Callers only: a class that declares the API itself is the SDK's (e.g. a plugin copied under Assets).
+            var buyers = c.model.Methods.Where(m => PurchaseCall.IsMatch(m.Code)
+                && !m.owner.methods.Any(x => x.name == "PurchaseProduct" || x.name == "InitiatePurchase")).ToList();
+            if (buyers.Count == 0)
+                sec.Add("Purchase", CheckStatus.Info, "none", "No PurchaseProduct / InitiatePurchase call found: no in-app purchases to check");
+            foreach (var b in buyers)
+            {
+                var call = PurchaseCall.Match(b.Code);
+                var set = setRx.Match(b.Code);
+                int callLine = b.File.LineOf(b.bodyStart + call.Index);
+                if (!set.Success || set.Index > call.Index)
+                {
+                    sec.Add($"{b.FullName}: sets {flagName} before the purchase", CheckStatus.Warn, set.Success ? "after the call" : "not set",
+                        $"Set {flagName} = true before {call.Groups[1].Value}(): otherwise an App Open ad shows when the player returns from the store dialog (GenZ Ads v1.33)",
+                        b.File.path, callLine);
+                    continue;
+                }
+                sec.Add($"{b.FullName}: sets {flagName} before the purchase", CheckStatus.Pass, flagName + " = true",
+                    "No App Open ad when the player returns from the store dialog", b.File.path, b.File.LineOf(b.bodyStart + set.Index));
+
+                // Cleared again when the purchase ends (success and failure), after a delay in real time.
+                var owner = b.owner;
+                var scope = new[] { owner };
+                foreach (var (label, names) in new[]
+                         {
+                             ("succeeds", new[] { "OnPurchasePending", "ProcessPurchase", "OnPurchaseConfirmed" }),
+                             ("fails", new[] { "OnPurchaseFailed" }),
+                         })
+                {
+                    var handlers = owner.methods.Where(m => names.Contains(m.name)).ToList();
+                    if (handlers.Count == 0)
+                    {
+                        sec.Add($"{owner.name}: {flagName} cleared when a purchase {label}", CheckStatus.Info, "no handler",
+                            $"No {string.Join(" / ", names)} method in {owner.name}: not checked", owner.file.path, owner.file.LineOf(owner.bodyStart));
+                        continue;
+                    }
+                    MethodInfo where = null;
+                    var h = handlers.FirstOrDefault(m => c.model.Reaches(m, clearRx, scope, 3, out where)) ?? handlers[0];
+                    if (where == null)
+                    {
+                        sec.Add($"{h.FullName}: clears {flagName}", CheckStatus.Warn, "not cleared",
+                            $"When a purchase {label}, {flagName} stays true if the store dialog didn't send the game to background (it's an overlay, so it often doesn't): "
+                            + $"the next real App Open ad is skipped. Set {flagName} = false a moment after the purchase ends (GenZ Ads v1.33)",
+                            h.File.path, h.Line);
+                        continue;
+                    }
+                    // A delay on the way: a method the handler leads to waits (WaitForSeconds… / Invoke) and then clears.
+                    var delayers = owner.methods.Where(m => DelayCall.IsMatch(m.Code) && c.model.Reaches(m, clearRx, scope, 1, out _)).ToList();
+                    var delay = delayers.FirstOrDefault(d => d == h || c.model.Reaches(h, SourceRef(d.name), scope, 3, out _));
+                    if (delay == null)
+                        sec.Add($"{h.FullName}: clears {flagName}", CheckStatus.Warn, "at once (" + where.FullName + ")",
+                            "Cleared straight away: if the game's return-to-foreground event comes after this callback, the App Open ad still shows. "
+                            + "Clear it a moment later (e.g. 2 s with WaitForSecondsRealtime)",
+                            where.File.path, where.Line);
+                    else if (!RealtimeDelay.IsMatch(delay.Code))
+                        sec.Add($"{h.FullName}: clears {flagName}", CheckStatus.Warn, "game time (" + delay.FullName + ")",
+                            "Cleared after a delay in game time (WaitForSeconds / Invoke): a shop that pauses the game (timeScale 0) never clears it. Use WaitForSecondsRealtime",
+                            delay.File.path, delay.Line);
+                    else
+                        sec.Add($"{h.FullName}: clears {flagName}", CheckStatus.Pass, delay.FullName,
+                            $"Cleared a moment after the purchase {label}, in real time", delay.File.path, delay.Line);
+                }
+            }
+
+            // 3. In-app review.
+            var reviewers = c.model.Methods.Where(m => ReviewLaunch.IsMatch(m.Code)
+                && !m.owner.methods.Any(x => x.name == "LaunchReviewFlow")).ToList(); // not the Play Review plugin's own ReviewManager
+            if (reviewers.Count == 0)
+                sec.Add("In-app review", CheckStatus.Info, "none", "No LaunchReviewFlow call found: no in-app review to check");
+            foreach (var r in reviewers)
+            {
+                var launch = ReviewLaunch.Match(r.Code);
+                int launchLine = r.File.LineOf(r.bodyStart + launch.Index);
+                var set = setRx.Match(r.Code);
+                bool setHere = set.Success && set.Index < launch.Index;
+                var setBy = setHere ? r : c.model.Referencing(r).FirstOrDefault(m => setRx.IsMatch(m.Code)); // e.g. Review() before StartCoroutine
+                if (setBy == null)
+                {
+                    sec.Add($"{r.FullName}: sets {flagName} before the review", CheckStatus.Fail, "not set",
+                        $"Set {flagName} = true before LaunchReviewFlow(): otherwise an App Open ad shows when the player closes the review card",
+                        r.File.path, launchLine);
+                    continue;
+                }
+                sec.Add($"{r.FullName}: sets {flagName} before the review", CheckStatus.Pass, flagName + " = true",
+                    $"Set in {setBy.FullName}", setBy.File.path, setHere ? r.File.LineOf(r.bodyStart + set.Index) : setBy.Line);
+
+                var clears = ClearOrCall(r.owner);
+                string code = r.Code;
+                int from = setHere ? set.Index : 0;
+
+                // After the review flow: cleared, a moment later, in real time.
+                var after = code.Substring(launch.Index);
+                var clearAfter = clears.Match(after);
+                if (!clearAfter.Success)
+                    sec.Add($"{r.FullName}: clears {flagName} after the review", CheckStatus.Warn, "not cleared",
+                        $"{flagName} stays true after the review: the card is an overlay (and Google's quota often shows none), so the game may not go to background and "
+                        + $"the next real App Open ad is skipped. Set {flagName} = false a moment after LaunchReviewFlow ends (GenZ Ads v1.33)",
+                        r.File.path, launchLine);
+                else
+                {
+                    var before = after.Substring(0, clearAfter.Index);
+                    int clearLine = r.File.LineOf(r.bodyStart + launch.Index + clearAfter.Index);
+                    if (!DelayCall.IsMatch(before))
+                        sec.Add($"{r.FullName}: clears {flagName} after the review", CheckStatus.Warn, "at once",
+                            "Cleared straight after the review flow: if the game's return-to-foreground event comes later, the App Open ad still shows. "
+                            + "Wait a moment first (e.g. 2 s with WaitForSecondsRealtime)",
+                            r.File.path, clearLine);
+                    else if (!RealtimeDelay.IsMatch(before))
+                        sec.Add($"{r.FullName}: clears {flagName} after the review", CheckStatus.Warn, "game time",
+                            "Waits in game time (WaitForSeconds) before clearing: a paused game (timeScale 0) never clears it. Use WaitForSecondsRealtime",
+                            r.File.path, clearLine);
+                    else
+                        sec.Add($"{r.FullName}: clears {flagName} after the review", CheckStatus.Pass, "after a delay",
+                            "Cleared a moment after the review flow ends, in real time", r.File.path, clearLine);
+                }
+
+                // Every early exit after the flag is set (a failed review request…) clears it in its own block.
+                var stuck = new List<int>();
+                foreach (Match x in EarlyExit.Matches(code))
+                {
+                    if (x.Index < from) continue;
+                    int start = Math.Max(code.LastIndexOf('{', x.Index), from);
+                    if (!clears.IsMatch(code.Substring(start, x.Index - start))) stuck.Add(r.File.LineOf(r.bodyStart + x.Index));
+                }
+                if (stuck.Count > 0)
+                    sec.Add($"{r.FullName}: clears {flagName} on early exits", CheckStatus.Warn, $"{stuck.Count} exit(s)",
+                        $"Exits (yield break / return) at line {string.Join(", ", stuck)} leave {flagName} true, e.g. when the review request fails: "
+                        + "the next real App Open ad is skipped. Clear it before exiting",
+                        r.File.path, stuck[0]);
+                else if (EarlyExit.IsMatch(code.Substring(from)))
+                    sec.Add($"{r.FullName}: clears {flagName} on early exits", CheckStatus.Pass, "", "Every early exit clears it", r.File.path, r.Line);
+            }
+        }
+
+        static Regex SourceRef(string name) => new Regex(@"\b" + Regex.Escape(name) + @"\b");
 
         // ================================================================= other logic
 

@@ -22,6 +22,57 @@ namespace GenZ.TestSuit
             public readonly List<string> applied = new List<string>();
             public readonly List<string> failed = new List<string>();
             public readonly List<string> unsavedScenes = new List<string>();
+            public readonly List<string> scripts = new List<string>(); // edited scripts (Unity recompiles)
+        }
+
+        /// <summary>
+        /// "Fix GA Ad Formats": replaces the quoted string on the exact line the check read (codeFile:codeLine, whose text
+        /// must still be codeContext) with "expected". Refused for a line that changed since the check.
+        /// </summary>
+        public static Result ApplyOnLines(IEnumerable<IdFix> fixes)
+        {
+            var result = new Result();
+            foreach (var group in fixes.Where(f => !string.IsNullOrEmpty(f.codeFile)).GroupBy(f => f.codeFile))
+            {
+                try
+                {
+                    var path = System.IO.Path.GetFullPath(group.Key);
+                    if (!System.IO.File.Exists(path)) { foreach (var f in group) result.failed.Add($"{f.label}: {group.Key} not found"); continue; }
+                    var bytes = System.IO.File.ReadAllBytes(path);
+                    bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+                    var utf8 = new System.Text.UTF8Encoding(false);
+                    var text = utf8.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
+                    var lines = System.Text.RegularExpressions.Regex.Split(text, "(?<=\n)"); // keeps each line's ending
+
+                    bool changed = false;
+                    foreach (var f in group)
+                    {
+                        int i = f.codeLine - 1;
+                        string quoted = "\"" + f.codeValue + "\"";
+                        if (i < 0 || i >= lines.Length || lines[i].TrimEnd('\r', '\n') != f.codeContext.TrimEnd('\r')
+                            || lines[i].IndexOf(quoted, StringComparison.Ordinal) < 0
+                            || lines[i].IndexOf(quoted, lines[i].IndexOf(quoted, StringComparison.Ordinal) + 1, StringComparison.Ordinal) >= 0)
+                        {
+                            result.failed.Add($"{f.label}: {f.codeFile}:{f.codeLine} changed since the check — run the suite again");
+                            continue;
+                        }
+                        lines[i] = lines[i].Replace(quoted, "\"" + f.expected + "\"");
+                        changed = true;
+                        result.applied.Add($"{f.label}: \"{f.current}\" → \"{f.expected}\"  ({f.Where})");
+                    }
+                    if (!changed) continue;
+
+                    var body = utf8.GetBytes(string.Concat(lines));
+                    System.IO.File.WriteAllBytes(path, bom ? new byte[] { 0xEF, 0xBB, 0xBF }.Concat(body).ToArray() : body);
+                    AssetDatabase.ImportAsset(group.Key);
+                    result.scripts.Add(group.Key);
+                }
+                catch (Exception e)
+                {
+                    foreach (var f in group) result.failed.Add($"{f.label}: couldn't edit {group.Key} — {e.Message}");
+                }
+            }
+            return result;
         }
 
         public static string Show(IdFix f, string v) => f.secret && v != null && v.Length > 14 ? v.Substring(0, 6) + "…" + v.Substring(v.Length - 6) : v;
@@ -75,7 +126,49 @@ namespace GenZ.TestSuit
                     if (openedHere) EditorSceneManager.CloseScene(scene, true);
                 }
             }
+
+            // Numbers written in scripts (a Taichi 2.0 default without an Inspector field).
+            foreach (var f in list.Where(f => string.IsNullOrEmpty(f.assetPath) && string.IsNullOrEmpty(f.scenePath) && !string.IsNullOrEmpty(f.codeFile)))
+                SetInCode(f, result);
             return result;
+        }
+
+        /// <summary>
+        /// Replaces the number on the line the check read (<see cref="IdFix.codeContext"/>), only if that line is still in the
+        /// file exactly once; keeps the file's encoding and line endings, then reimports it so Unity recompiles.
+        /// </summary>
+        static void SetInCode(IdFix f, Result result)
+        {
+            try
+            {
+                var path = System.IO.Path.GetFullPath(f.codeFile); // Assets/... relative to the project root
+                if (!System.IO.File.Exists(path)) { result.failed.Add($"{f.label}: {f.codeFile} not found"); return; }
+                var bytes = System.IO.File.ReadAllBytes(path);
+                bool bom = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF;
+                var utf8 = new System.Text.UTF8Encoding(false);
+                var text = utf8.GetString(bytes, bom ? 3 : 0, bytes.Length - (bom ? 3 : 0));
+
+                int at = string.IsNullOrEmpty(f.codeContext) ? -1 : text.IndexOf(f.codeContext, StringComparison.Ordinal);
+                if (at < 0 || text.IndexOf(f.codeContext, at + 1, StringComparison.Ordinal) >= 0
+                    || string.IsNullOrEmpty(f.codeValue) || !f.codeContext.EndsWith(f.codeValue, StringComparison.Ordinal))
+                {
+                    result.failed.Add($"{f.label}: {f.codeFile}:{f.codeLine} changed since the check — run the suite again");
+                    return;
+                }
+                int valueAt = at + f.codeContext.Length - f.codeValue.Length;
+                text = text.Substring(0, valueAt) + f.expected + text.Substring(valueAt + f.codeValue.Length);
+
+                var body = utf8.GetBytes(text);
+                var output = bom ? new byte[] { 0xEF, 0xBB, 0xBF }.Concat(body).ToArray() : body;
+                System.IO.File.WriteAllBytes(path, output);
+                AssetDatabase.ImportAsset(f.codeFile);
+                result.applied.Add($"{f.label}: {f.current} → {f.expected}  ({f.Where})");
+                if (!result.scripts.Contains(f.codeFile)) result.scripts.Add(f.codeFile);
+            }
+            catch (Exception e)
+            {
+                result.failed.Add($"{f.label}: couldn't edit {f.codeFile} — {e.Message}");
+            }
         }
 
         static bool Set(SerializedObject so, IdFix f, Result result)

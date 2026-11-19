@@ -19,6 +19,11 @@ namespace GenZ.TestSuit
         public string taichi1Default, taichi2Default;   // defaults set in the Inspector (RemoteConfigManager); null = not found
         public string defaultWhere, defaultFile;        // "Splash › ADs (RemoteConfigManager)", scene path
         public string defaultObjectPath, defaultComponent, taichi2DefaultProperty; // where Auto Apply writes the sheet's count
+        // No Inspector field: the Taichi 2.0 count written in code (the key's Remote Config default, or the field's starting value).
+        public string taichi2CodeFile;       // Assets/... ; null = not a plain number in code
+        public int taichi2CodeLine;
+        public string taichi2CodeValue;      // the number as written, e.g. "50L"
+        public string taichi2CodeContext;    // its line up to the end of the number, exactly as in the file
     }
 
     /// <summary>
@@ -203,6 +208,7 @@ namespace GenZ.TestSuit
             // Taichi 2.0: the impression count the game starts with must equal the sheet's value for this game.
             if (!countBased || !input.sheetRead) return;
             var field = used ?? target;
+            if (input.taichi2Default == null) FindCodeDefault(c, rcClasses, key, field, input);
             string code = defMatch.Success ? ResolveDefault(c.model, defMatch.Groups[1].Value) : null, where = "Remote Config default";
             int defLine = readLine; string defFile = rm.File.path;
             if (input.taichi2Default != null)
@@ -231,9 +237,55 @@ namespace GenZ.TestSuit
                 sec.Add("Impression count = sheet", same ? CheckStatus.Pass : CheckStatus.Fail, Num(code),
                     same ? $"{where} {Num(code)} matches the sheet's \"{input.sheetColumn}\""
                          : $"{where} is {Num(code)}, the sheet's \"{input.sheetColumn}\" says {Num(input.sheetCount)} — used until Remote Config loads and whenever \"{key}\" is missing"
-                           + (input.taichi2Default != null ? ". Auto Apply All IDs from Sheet sets it" : ""),
+                           + (input.taichi2Default != null ? ". Auto Apply All IDs from Sheet sets it"
+                              : input.taichi2CodeFile != null ? $". Auto Apply All IDs from Sheet writes it in {input.taichi2CodeFile}:{input.taichi2CodeLine}" : ""),
                     defFile, defLine);
             }
+        }
+
+        static readonly Regex NumberLiteral = new Regex(@"^-?\d+(\.\d+)?[lLuUfFdDmM]{0,2}$");
+
+        /// <summary>
+        /// Where the Taichi 2.0 count is written in code, found the same way the check reads it: the key's Remote Config
+        /// default ({ "custom_imp", 50L }), the field that default names, or else the starting value of the field the
+        /// key is read into. Only a plain number is recorded (an expression can't be rewritten safely).
+        /// </summary>
+        static void FindCodeDefault(Ctx c, List<ClassInfo> rcClasses, string key, string field, TaichiInput input)
+        {
+            SourceFile file = null;
+            int start = -1, length = 0;
+            string name = field;
+            foreach (var k in rcClasses)
+            {
+                var body = k.file.text.Substring(k.bodyStart, k.bodyEnd - k.bodyStart);
+                var d = Regex.Match(body, @"[{\[]\s*""" + Regex.Escape(key) + @"""\s*[,\]]\s*=?\s*([^,}\]]+)");
+                if (!d.Success) continue;
+                var expr = d.Groups[1].Value.TrimEnd();
+                if (NumberLiteral.IsMatch(expr)) { file = k.file; start = k.bodyStart + d.Groups[1].Index; length = expr.Length; }
+                else
+                {
+                    var id = Regex.Match(expr, @"^(?:\w+\.)?([A-Za-z_]\w*)$");
+                    if (!id.Success) return; // an expression: leave it to the developer
+                    name = id.Groups[1].Value;
+                }
+                break;
+            }
+            if (file == null)
+                foreach (var k in c.model.classes)
+                {
+                    var d = Regex.Match(k.Body, @"\b(?:int|long|float|double)\s+" + Regex.Escape(name) + @"\s*=\s*([^;,]+)[;,]");
+                    if (!d.Success) continue;
+                    var expr = k.file.text.Substring(k.bodyStart + d.Groups[1].Index, d.Groups[1].Length).TrimEnd();
+                    if (NumberLiteral.IsMatch(expr)) { file = k.file; start = k.bodyStart + d.Groups[1].Index; length = expr.Length; }
+                    break;
+                }
+            if (file == null) return;
+
+            int lineStart = file.text.LastIndexOf('\n', start) + 1;
+            input.taichi2CodeFile = file.path;
+            input.taichi2CodeLine = file.LineOf(start);
+            input.taichi2CodeValue = file.text.Substring(start, length);
+            input.taichi2CodeContext = file.text.Substring(lineStart, start + length - lineStart);
         }
 
         static string Num(string s) => Regex.Replace(s ?? "", @"[^\d.\-]", "");

@@ -17,6 +17,8 @@ namespace GenZ.TestSuit
         const string SectionFirebase = "SDK · Firebase config";
         const string SectionDeps = "SDK · Installed and resolved (Android dependencies)";
         const string SectionBuild = "SDK · Android build setup";
+        const string SectionGa = "SDK · GameAnalytics ad revenue formats (MAX = AdMob)";
+        const string SectionAdapters = "SDK · AppLovin MAX adapters (mediation networks)";
 
         const string PluginsAndroid = "Assets/Plugins/Android";
         const string FirebaseXml = PluginsAndroid + "/FirebaseApp.androidlib/res/values/google-services.xml";
@@ -32,7 +34,9 @@ namespace GenZ.TestSuit
             var projectSettings = Read("ProjectSettings/ProjectSettings.asset") ?? "";
             CheckFirebase(report.Section(SectionFirebase, TestStage.Integration), packageName, s);
             CheckDependencies(report.Section(SectionDeps, TestStage.Integration), s, projectSettings);
+            CheckMaxAdapters(report.Section(SectionAdapters, TestStage.Integration), s, projectSettings);
             CheckBuildSetup(report.Section(SectionBuild, TestStage.Integration), projectSettings);
+            CheckGaAdFormats(report, s, projectSettings);
         }
 
         // ================================================================= Firebase
@@ -184,6 +188,134 @@ namespace GenZ.TestSuit
             }
         }
 
+        // ================================================================= AppLovin MAX adapters
+
+        static readonly Regex XmlComment = new Regex(@"<!--.*?-->", RegexOptions.Singleline);
+        static readonly Regex GradleDep = new Regex(@"^[ \t]*(?:implementation|api|compile)\s*\(?\s*['""]([^'"":\s]+):([^'"":\s]+):([^'""\s]+)['""]", RegexOptions.Multiline);
+        static readonly Regex AarName = new Regex(@"^([\w.-]+?)\.([\w-]+)-(\d[\w.\-\[\]]*)\.(aar|jar)$");
+
+        class Found { public string ga, version, where; public int line; }
+
+        // The studio's MAX adapter set: every listed adapter installed (Android dependency), IronSource gone, and any
+        // other adapter reported. Read from every *Dependencies.xml (comments ignored), the resolved mainTemplate.gradle,
+        // adapter .aar/.jar files the resolver copied into Plugins/Android, and the MaxSdk/Mediation folders.
+        static void CheckMaxAdapters(ReportSection sec, IntegrationSettings s, string projectSettings)
+        {
+            var required = Parse(s.maxAdapters);
+            var forbidden = Parse(s.forbiddenAdapters);
+            Regex adapterRx = null;
+            try { if (!string.IsNullOrWhiteSpace(s.adapterPattern)) adapterRx = new Regex(s.adapterPattern, RegexOptions.IgnoreCase); }
+            catch (ArgumentException e) { sec.Add("Adapter pattern", CheckStatus.Warn, s.adapterPattern, "Not a valid regex, unlisted adapters aren't looked for: " + e.Message); }
+
+            var found = new List<Found>();
+            foreach (var file in Directory.GetFiles("Assets", "*Dependencies.xml", SearchOption.AllDirectories).Select(Norm))
+            {
+                var text = Read(file) ?? "";
+                var xml = XmlComment.Replace(text, m => Regex.Replace(m.Value, "[^\n]", " "));
+                foreach (Match sm in SpecRegex.Matches(xml))
+                {
+                    var p = sm.Groups[1].Value.Trim().Split(':');
+                    if (p.Length >= 2) found.Add(new Found { ga = (p[0] + ":" + p[1]).ToLowerInvariant(), version = p.Length > 2 ? p[2] : "", where = file, line = LineAt(xml, sm.Index) });
+                }
+            }
+            bool customGradle = Regex.IsMatch(projectSettings, @"useCustomMainGradleTemplate:\s*1");
+            var gradle = customGradle ? Read(MainGradle) : null;
+            if (gradle != null)
+                foreach (Match gm in GradleDep.Matches(gradle))
+                    found.Add(new Found { ga = (gm.Groups[1].Value + ":" + gm.Groups[2].Value).ToLowerInvariant(), version = gm.Groups[3].Value, where = MainGradle, line = LineAt(gradle, gm.Index) });
+            if (Directory.Exists(PluginsAndroid))
+                foreach (var lib in Directory.GetFiles(PluginsAndroid, "*.*", SearchOption.AllDirectories).Where(f => f.EndsWith(".aar") || f.EndsWith(".jar")).Select(Norm))
+                {
+                    var am = AarName.Match(Path.GetFileName(lib));
+                    if (am.Success) found.Add(new Found { ga = (am.Groups[1].Value + ":" + am.Groups[2].Value).ToLowerInvariant(), version = am.Groups[3].Value, where = lib, line = 0 });
+                }
+
+            bool maxInstalled = Directory.Exists("Assets/MaxSdk") || found.Any(f => f.ga.StartsWith("com.applovin:applovin-sdk"));
+            if (!maxInstalled)
+            {
+                sec.Add("AppLovin MAX", CheckStatus.Info, "not installed", "No MaxSdk folder or com.applovin:applovin-sdk dependency: adapters not checked");
+                return;
+            }
+
+            bool Matches(Found f, string spec) => spec.EndsWith(":") ? f.ga.StartsWith(spec) : f.ga == spec;
+            string Places(IEnumerable<Found> list) => string.Join(", ", list.Select(f => f.where + (f.line > 0 ? ":" + f.line : "")).Distinct().Take(4));
+
+            // 1. Every listed adapter is installed (its Dependencies.xml), or at least resolved into Gradle / Plugins/Android.
+            var missing = new List<string>();
+            foreach (var (name, spec) in required)
+            {
+                var hits = found.Where(f => Matches(f, spec)).ToList();
+                var xmlHit = hits.FirstOrDefault(f => f.where.EndsWith(".xml"));
+                if (xmlHit != null)
+                    sec.Add($"{name} adapter", CheckStatus.Pass, xmlHit.version, $"{spec} in {xmlHit.where}", xmlHit.where, xmlHit.line);
+                else if (hits.Count > 0)
+                {
+                    missing.Add(name + " (only left in Gradle)");
+                    sec.Add($"{name} adapter", CheckStatus.Fail, "not installed",
+                        $"{spec} is only in {Places(hits)}, left from an earlier resolve: its Dependencies.xml is gone, so the next Force Resolve drops it. Reinstall the adapter",
+                        hits[0].where, hits[0].line);
+                }
+                else
+                {
+                    missing.Add(name);
+                    bool custom = !spec.StartsWith("com.applovin.mediation:");
+                    sec.Add($"{name} adapter", CheckStatus.Fail, "missing",
+                        $"{spec} isn't installed: MAX can't fill ads from {name}. "
+                        + (custom ? "It's a custom network: add its *Dependencies.xml (e.g. under Assets/Editor) and Force Resolve"
+                                  : "Install it from AppLovin → Integration Manager, then Force Resolve"));
+                }
+            }
+            sec.Add("All studio adapters installed", missing.Count == 0 ? CheckStatus.Pass : CheckStatus.Fail,
+                missing.Count == 0 ? $"{required.Count} of {required.Count}" : $"{missing.Count} missing",
+                missing.Count == 0 ? "Every adapter in the studio list (config integration.maxAdapters) is there" : "Missing: " + string.Join(", ", missing));
+
+            // 2. Removed networks (IronSource) must be fully gone: dependency files, Gradle, libraries and the Mediation folder.
+            foreach (var (name, spec) in forbidden)
+            {
+                var hits = found.Where(f => Matches(f, spec)).ToList();
+                var folderName = Regex.Replace(name, @"\W.*$", "");
+                // The Integration Manager's folder (MaxSdk/Mediation/IronSource), for MAX adapters only.
+                var folder = Directory.Exists("Assets/MaxSdk/Mediation") && folderName.Length > 0 && spec.StartsWith("com.applovin.mediation:")
+                    ? Directory.GetDirectories("Assets/MaxSdk/Mediation").Select(Norm).FirstOrDefault(d => string.Equals(Path.GetFileName(d), folderName, StringComparison.OrdinalIgnoreCase))
+                    : null;
+                if (hits.Count == 0 && folder == null)
+                {
+                    sec.Add($"{name} removed", CheckStatus.Pass, "not included", $"No {spec} in the project");
+                    continue;
+                }
+                var where = Places(hits) + (folder != null ? (hits.Count > 0 ? ", " : "") + folder : "");
+                sec.Add($"{name} removed", CheckStatus.Fail, "still included",
+                    $"{name} must not be in the build, but it's in {where}. Remove it with AppLovin → Integration Manager (or delete "
+                    + (folder ?? "its Dependencies.xml") + "), then Force Resolve so mainTemplate.gradle drops it",
+                    hits.FirstOrDefault()?.where ?? folder, hits.FirstOrDefault()?.line ?? 0);
+            }
+
+            // 3. Any other adapter: not in the studio list.
+            int unknown = 0;
+            if (adapterRx != null)
+                foreach (var g in found.Where(f => adapterRx.IsMatch(f.ga)
+                                                  && !required.Any(r => Matches(f, r.spec)) && !forbidden.Any(r => Matches(f, r.spec)))
+                                       .GroupBy(f => f.ga))
+                {
+                    unknown++;
+                    var first = g.OrderBy(f => f.where.EndsWith(".xml") ? 0 : 1).First();
+                    sec.Add($"Unlisted adapter · {g.Key}", CheckStatus.Warn, first.version,
+                        $"Not in the studio adapter list (config integration.maxAdapters), found in {Places(g)}. "
+                        + "Remove it if the network isn't used, or add it to the list if the studio now uses it",
+                        first.where, first.line);
+                }
+            if (adapterRx != null && unknown == 0)
+                sec.Add("No unlisted adapters", CheckStatus.Pass, "", "Every adapter in the project is in the studio list");
+        }
+
+        static List<(string name, string spec)> Parse(string[] entries) =>
+            (entries ?? new string[0]).Where(e => !string.IsNullOrWhiteSpace(e)).Select(e =>
+            {
+                var bar = e.IndexOf('|');
+                var spec = (bar > 0 ? e.Substring(bar + 1) : e).Trim().ToLowerInvariant();
+                return (bar > 0 ? e.Substring(0, bar).Trim() : spec, spec);
+            }).ToList();
+
         // ================================================================= Gradle / manifest
 
         static void CheckBuildSetup(ReportSection sec, string projectSettings)
@@ -225,6 +357,209 @@ namespace GenZ.TestSuit
                     MainManifest, dbg.Success ? manifest.Substring(0, dbg.Index).Count(ch => ch == '\n') + 1 : 1);
             }
         }
+
+        // ================================================================= GameAnalytics ILRD formats
+
+        // GameAnalytics groups ad revenue by the adunit_format string each integration sends. GAMaxIntegration.cs and
+        // GAAdMobIntegration.cs each hard-code their own; when they differ (AdMob "INTERSTITIAL", MAX "INTER") GA shows
+        // one ad format as two. MAX's strings are the reference: each AdMob string must equal MAX's for that format.
+        // Every wrong AdMob string is recorded in report.gaFormatFixes for the window's "Fix GA Ad Formats" button.
+
+        // format label, MAX callback group (MaxSdkCallbacks.<group>), AdMob ad class (GoogleMobileAds.Api.<class>)
+        static readonly string[][] GaFormats =
+        {
+            new[] { "Interstitial", "Interstitial", "InterstitialAd" },
+            new[] { "Rewarded", "Rewarded", "RewardedAd" },
+            new[] { "Banner", "Banner", "BannerView" },
+            new[] { "App Open", "AppOpen", "AppOpenAd" },
+        };
+        static readonly HashSet<string> GaRequired = new HashSet<string> { "Interstitial", "Rewarded" }; // a mismatch fails; others warn
+
+        struct GaString { public string value; public int line; public string lineText; }
+
+        static void CheckGaAdFormats(TestReport report, IntegrationSettings s, string projectSettings)
+        {
+            var sec = report.Section(SectionGa, TestStage.Integration);
+            var maxFile = FindFile("GAMaxIntegration.cs");
+            var admobFile = FindFile("GAAdMobIntegration.cs");
+
+            // Without the define, GameAnalytics compiles the integration out and gets no revenue from that network.
+            var defines = AndroidDefines(projectSettings);
+            foreach (var d in new[] { "gameanalytics_max_enabled", "gameanalytics_admob_enabled" })
+            {
+                bool on = defines.Contains(d);
+                string net = d.Contains("max") ? "MAX" : "AdMob";
+                sec.Add("Define " + d, on ? CheckStatus.Pass : CheckStatus.Fail, on ? "set" : "missing",
+                    on ? "In the Android Scripting Define Symbols"
+                       : $"Not in the Android Scripting Define Symbols: GameAnalytics compiles out its {net} ad revenue code. Turn on {net} in GameAnalytics Settings → Ad Networks, or add the define");
+            }
+
+            if (admobFile == null)
+            {
+                sec.Add("GAAdMobIntegration.cs", CheckStatus.Fail, "not found",
+                    "GameAnalytics' AdMob ad revenue script is missing — reimport the GameAnalytics SDK");
+                return;
+            }
+
+            var fallback = (s.gaAdFormatFallback ?? new string[0]).Select(x => x.Split('|')).Where(p => p.Length == 2)
+                .GroupBy(p => p[0].Trim(), StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First()[1].Trim(), StringComparer.OrdinalIgnoreCase);
+            var maxStrings = new Dictionary<string, GaString>();
+            if (maxFile == null)
+                sec.Add("GAMaxIntegration.cs", CheckStatus.Warn, "not found",
+                    "GameAnalytics' MAX ad revenue script is missing — comparing AdMob with the usual MAX strings (" + string.Join(", ", fallback.Values) + ")");
+            else
+                maxStrings = ReadMaxFormats(Read(maxFile) ?? "");
+            var admobStrings = ReadAdMobFormats(Read(admobFile) ?? "");
+
+            foreach (var f in GaFormats)
+            {
+                string label = f[0], lower = label.ToLowerInvariant();
+                bool required = GaRequired.Contains(label);
+                bool haveMax = maxStrings.TryGetValue(f[1], out var max);
+                string expected = haveMax ? max.value : fallback.TryGetValue(label, out var fb) ? fb : null;
+                string source = haveMax ? "MAX" : "usual MAX";
+
+                if (!admobStrings.TryGetValue(f[2], out var admob))
+                {
+                    sec.Add($"GA format · {label}", required ? CheckStatus.Warn : CheckStatus.Info, "not found",
+                        $"Couldn't read the adunit_format GAAdMobIntegration.cs sends for {f[2]} — check it by hand" + (expected != null ? $": it must be \"{expected}\"" : ""),
+                        admobFile, 1);
+                    continue;
+                }
+                if (expected == null)
+                {
+                    sec.Add($"GA format · {label}", CheckStatus.Info, $"AdMob \"{admob.value}\"", "No MAX string to compare with", admobFile, admob.line);
+                    continue;
+                }
+                if (admob.value == expected)
+                {
+                    sec.Add($"GA format · {label}", CheckStatus.Pass, $"\"{expected}\"",
+                        $"AdMob and MAX both send \"{expected}\": one {lower} ad format in GameAnalytics", admobFile, admob.line);
+                    continue;
+                }
+
+                sec.Add($"GA format · {label}", required ? CheckStatus.Fail : CheckStatus.Warn, $"AdMob \"{admob.value}\" ≠ {source} \"{expected}\"",
+                    $"GameAnalytics gets two different strings for the {lower} ad format: MAX sends \"{expected}\", AdMob sends \"{admob.value}\", "
+                    + $"so GA shows {lower} revenue split into two formats. Click \"Fix GA Ad Formats\" to set AdMob's to \"{expected}\"",
+                    admobFile, admob.line);
+                report.gaFormatFixes.Add(new IdFix
+                {
+                    label = $"GameAnalytics AdMob {label} format",
+                    current = admob.value,
+                    expected = expected,
+                    codeFile = admobFile,
+                    codeLine = admob.line,
+                    codeContext = admob.lineText,
+                    codeValue = admob.value,
+                });
+            }
+
+            CheckGaSubscriptions(sec);
+        }
+
+        // The game's ad scripts must hand their ads to GameAnalytics, or the strings above are never sent.
+        static void CheckGaSubscriptions(ReportSection sec)
+        {
+            var adClasses = GaFormats.Select(f => f[2]).Concat(new[] { "RewardedInterstitialAd" }).ToArray();
+            var admobCalls = new Dictionary<string, (string file, int line)>(); // ad class ("?" = not resolved) → first call
+            (string file, int line)? maxCall = null;
+            var callRx = new Regex(@"\bSubscribeAdMobImpressions\s*\(\s*[^,;]+,\s*(\w+)\s*\)");
+
+            foreach (var file in Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories).Select(Norm))
+            {
+                if (file.IndexOf("/GameAnalytics/", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                var raw = Read(file) ?? "";
+                if (raw.IndexOf("GameAnalyticsILRD", StringComparison.Ordinal) < 0) continue;
+                var code = StripComments(raw);
+
+                var m = Regex.Match(code, @"\bSubscribeMaxImpressions\s*\(\s*\)");
+                if (m.Success && maxCall == null) maxCall = (file, LineAt(code, m.Index));
+
+                foreach (Match c in callRx.Matches(code))
+                {
+                    var decl = Regex.Match(code, @"\b(" + string.Join("|", adClasses) + @")\s+" + Regex.Escape(c.Groups[1].Value) + @"\b");
+                    var type = decl.Success ? decl.Groups[1].Value : "?";
+                    if (!admobCalls.ContainsKey(type)) admobCalls[type] = (file, LineAt(code, c.Index));
+                }
+            }
+
+            if (maxCall != null)
+                sec.Add("GA ← MAX revenue", CheckStatus.Pass, "subscribed", "GameAnalyticsILRD.SubscribeMaxImpressions() is called", maxCall.Value.file, maxCall.Value.line);
+            else
+                sec.Add("GA ← MAX revenue", CheckStatus.Warn, "not found",
+                    "No GameAnalyticsILRD.SubscribeMaxImpressions() call in the ad scripts: GameAnalytics gets no MAX ad revenue");
+
+            bool unresolved = admobCalls.TryGetValue("?", out var someCall);
+            foreach (var f in GaFormats.Where(f => GaRequired.Contains(f[0])))
+            {
+                string label = $"GA ← AdMob {f[0]} revenue";
+                if (admobCalls.TryGetValue(f[2], out var at))
+                    sec.Add(label, CheckStatus.Pass, "subscribed", $"GameAnalyticsILRD.SubscribeAdMobImpressions(…, {f[2]}) is called", at.file, at.line);
+                else if (unresolved) // a call whose ad variable type couldn't be read: don't warn blindly
+                    sec.Add(label, CheckStatus.Info, "unclear", $"Couldn't tell whether a SubscribeAdMobImpressions call passes the {f[2]}: check it by hand", someCall.file, someCall.line);
+                else
+                    sec.Add(label, CheckStatus.Warn, "not found",
+                        $"No GameAnalyticsILRD.SubscribeAdMobImpressions(…) for the {f[2]}: GameAnalytics gets no AdMob {f[0].ToLowerInvariant()} revenue");
+            }
+        }
+
+        // MaxSdkCallbacks.Interstitial.OnAdRevenuePaidEvent += (…) => runCallback("INTER", …);
+        static Dictionary<string, GaString> ReadMaxFormats(string text)
+        {
+            var result = new Dictionary<string, GaString>();
+            var lines = SplitLines(text);
+            var rx = new Regex(@"MaxSdkCallbacks\.(\w+)\.OnAdRevenuePaidEvent\s*\+=.*?""([^""]*)""");
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (IsCommentLine(lines[i])) continue;
+                var m = rx.Match(lines[i]);
+                if (m.Success && !result.ContainsKey(m.Groups[1].Value))
+                    result[m.Groups[1].Value] = new GaString { value = m.Groups[2].Value, line = i + 1, lineText = lines[i] };
+            }
+            return result;
+        }
+
+        // ListenForImpressions(string adUnitId, GoogleMobileAds.Api.InterstitialAd ad, …) { … adunit_format = "INTER"; … }
+        static Dictionary<string, GaString> ReadAdMobFormats(string text)
+        {
+            var result = new Dictionary<string, GaString>();
+            var lines = SplitLines(text);
+            var overload = new Regex(@"ListenForImpressions\s*\(.*?\b(BannerView|InterstitialAd|RewardedAd|RewardedInterstitialAd|AppOpenAd)\s+\w+");
+            var format = new Regex(@"\badunit_format\s*=\s*""([^""]*)""");
+            string current = null;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                if (IsCommentLine(lines[i])) continue;
+                var o = overload.Match(lines[i]);
+                if (o.Success) { current = o.Groups[1].Value; continue; }
+                var f = format.Match(lines[i]);
+                if (f.Success && current != null && !result.ContainsKey(current))
+                {
+                    result[current] = new GaString { value = f.Groups[1].Value, line = i + 1, lineText = lines[i] };
+                    current = null;
+                }
+            }
+            return result;
+        }
+
+        static HashSet<string> AndroidDefines(string projectSettings)
+        {
+            var block = Regex.Match(projectSettings, @"scriptingDefineSymbols:[ \t]*\r?\n((?:[ \t]+\S[^\n]*\n?)*)");
+            var android = Regex.Match(block.Groups[1].Value, @"^\s*(?:Android|7):[ \t]*([^\r\n]*)", RegexOptions.Multiline);
+            return new HashSet<string>(android.Groups[1].Value.Split(';').Select(d => d.Trim()).Where(d => d.Length > 0));
+        }
+
+        static string FindFile(string name) =>
+            Directory.GetFiles("Assets", name, SearchOption.AllDirectories).Select(Norm).OrderBy(p => p.Length).FirstOrDefault();
+
+        static string[] SplitLines(string text) => text.Replace("\r\n", "\n").Split('\n');
+        static bool IsCommentLine(string line) { var t = line.TrimStart(); return t.StartsWith("//") || t.StartsWith("*") || t.StartsWith("/*"); }
+        static int LineAt(string text, int index) => text.Substring(0, index).Count(ch => ch == '\n') + 1;
+
+        // Blanks comments but keeps every newline, so offsets still give the right line numbers. Strings are kept.
+        static string StripComments(string code) =>
+            Regex.Replace(code, @"/\*.*?\*/|//[^\n]*|""(?:\\.|[^""\\\n])*""",
+                m => m.Value.StartsWith("\"") ? m.Value : Regex.Replace(m.Value, "[^\n]", " "), RegexOptions.Singleline);
 
         // ================================================================= helpers
 

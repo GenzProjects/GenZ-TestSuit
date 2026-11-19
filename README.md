@@ -22,7 +22,7 @@ or in `Packages/manifest.json`:
 "com.genz.testsuit": "https://github.com/GenzProjects/GenZ-TestSuit.git#v1.0.0"
 ```
 
-Keep the `#v…` tag so every game gets the same release. To update, change the tag.
+The tag above is the latest release. Keep the `#v…` tag so every game gets the same release. To update, change the tag. Every release and its changes are under [Releases](https://github.com/GenzProjects/GenZ-TestSuit/releases/latest).
 
 The first run creates `Assets/GenZ-TestSuit/GenZTestSuitConfig.asset` in your project; commit it. Apply Test Environment copies the phone panel to `Assets/GenZ-DeepTest/`.
 
