@@ -1,5 +1,6 @@
 ﻿// GenzMonetization-v1.33
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -116,8 +117,11 @@ public class unityInApp : MonoBehaviour
         try
         {
             SetLoadingScreen(true);
-            // The store dialog sends the app to background; skip the App Open ad on return
-            // (AppOpen_Code.ShowAppOpenAdIfAvailable clears the flag).
+            // Skip the App Open ad when the player returns from the store dialog
+            // (AppOpen_Code.ShowAppOpenAdIfAvailable clears the flag). The dialog is an overlay,
+            // so the app often never goes to background; ClearAppOpenSkipLater clears it then.
+            if (_clearAppOpenSkip != null) { StopCoroutine(_clearAppOpenSkip); _clearAppOpenSkip = null; }
+            _appOpenSkipSet = true;
             if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = true;
             _store.PurchaseProduct(productId);
             Debug.Log($"[IAP] Purchasing: {productId}");
@@ -126,10 +130,38 @@ public class unityInApp : MonoBehaviour
         {
             Debug.LogError($"[IAP] PurchaseProduct threw: {e}");
             _pendingValuesByProductId.Remove(productId);
-            if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = false; // store never opened
+            ClearAppOpenSkip(); // store never opened
             SetLoadingScreen(false);
             ShowFailScreen();
         }
+    }
+
+    // Seconds (real time, so a paused game with timeScale 0 still clears it) after a purchase ends
+    // before the App Open skip flag is cleared, if returning to the game didn't already clear it.
+    private const float AppOpenSkipClearDelay = 2f;
+    private bool _appOpenSkipSet;
+    private Coroutine _clearAppOpenSkip;
+
+    private void ClearAppOpenSkipLater()
+    {
+        if (!_appOpenSkipSet) return; // e.g. an order restored at startup, not a purchase from this session
+        if (_clearAppOpenSkip != null) StopCoroutine(_clearAppOpenSkip);
+        _clearAppOpenSkip = StartCoroutine(ClearAppOpenSkipAfterDelay());
+    }
+
+    private IEnumerator ClearAppOpenSkipAfterDelay()
+    {
+        yield return new WaitForSecondsRealtime(AppOpenSkipClearDelay);
+        _clearAppOpenSkip = null;
+        ClearAppOpenSkip();
+    }
+
+    private void ClearAppOpenSkip()
+    {
+        if (_clearAppOpenSkip != null) { StopCoroutine(_clearAppOpenSkip); _clearAppOpenSkip = null; }
+        if (!_appOpenSkipSet) return;
+        _appOpenSkipSet = false;
+        if (AdsManager.instance != null) AdsManager.instance.isPausedDuetoAd = false;
     }
 
     private void SetLoadingScreen(bool show)
@@ -237,6 +269,7 @@ public class unityInApp : MonoBehaviour
         // Acknowledge so the store completes the purchase
         _store.ConfirmPurchase(order);
         SetLoadingScreen(false);
+        ClearAppOpenSkipLater();
         if (granted) ShowSuccessScreen(); // only for a purchase made in this session, not a restored order
     }
 
@@ -258,6 +291,7 @@ public class unityInApp : MonoBehaviour
         if (!string.IsNullOrEmpty(pid)) _pendingValuesByProductId.Remove(pid);
 
         SetLoadingScreen(false);
+        ClearAppOpenSkipLater();
         ShowFailScreen();
     }
 
