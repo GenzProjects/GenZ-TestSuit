@@ -84,6 +84,7 @@ Rule targets: `AdsObject` (the 8 scripts on the Ads object in the SDK scene, def
 - Every paid event (MAX `OnAdRevenuePaidEvent`, AdMob `OnAdPaid`) reports to Adjust, Firebase `ad_impression` and AppMetrica (`revenueSinks`).
 - `AdsGapTimer.ResetTimer()` for every interstitial and rewarded grant, per network: in SDK callbacks, or else on every call path.
 - Remote Config sets `AdsGapTimer.timeLeft` (`adtimer`), and every `GetValue("key")` has a `SetDefaultsAsync` default (section **Remote Config defaults**). Remote Config classes = `remoteConfigClasses` plus any class calling `GetValue("…")`; a default written as a field name resolves to its starting value.
+- No App Open ad after a purchase or review (`CheckAppOpenSkip`): App Open reads `appOpenSkipFlags` (`isPausedDuetoAd`); the `PurchaseProduct`/`InitiatePurchase` caller and the `LaunchReviewFlow` caller set it, then clear it after a `WaitForSecondsRealtime` delay on success, failure and early exits (v1.33; only a missing review set fails).
 - Common bugs: AdMob callbacks off the main thread, unchecked nulls, wrong `Invoke("name")`.
 
 Current state of this project's ad scripts: Taichi + code checks give 0 failures and 0 warnings (AdMob retries go through `interRetryPending`/`rewardRetryPending`/`bannerRetryPending` and `AdMob.Update`; `_rewarded?.Invoke()`). The SDK file checks warn that `Assets/Plugins/Android/gradleTemplate.properties` points `android.aapt2FromMavenOverride` at Unity 2022.3.24f1.
