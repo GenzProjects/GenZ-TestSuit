@@ -131,5 +131,7 @@ public class RemoteConfigManager : MonoBehaviour
         Debug.Log($"Remote Config: adtimer={AdTimer} adtimertwo={AdTimer2} custom_rev={revenue_maxValue.ToString(CultureInfo.InvariantCulture)} custom_imp={impressionValue_ForRevenue} " +
                   $"useSdkVendorSwitch={useSdkVendorSwitch} firstad={firstAdTest} rewpopupfreq={rewPopUpFreq} bigbanner={canShowBigbanner} " +
                   $"rewcointest={RewCoinsTest} showBrainBar={canShowBrainBar} showRewOnHard={canShowRewOnHardLevel}");
+        
+        FirebaseManager.NotifyRemoteDataFetch(true);
     }
 }

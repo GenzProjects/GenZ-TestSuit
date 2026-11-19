@@ -15,6 +15,19 @@ public class FirebaseManager : MonoBehaviour
 
 
     public static FirebaseManager Instance;
+    
+    
+    public static bool isDataFetch = false;
+    public static bool isFetchCompleted = false;
+    public static event Action<bool> OnRemoteDataFetch;
+    public static void NotifyRemoteDataFetch(bool success)
+    {
+        isDataFetch = success;
+        isFetchCompleted = true;
+        OnRemoteDataFetch?.Invoke(success);
+    }
+    
+    
     // Remote Config keys, defaults and values are in RemoteConfigManager (per game); this script is the same in every game.
 
     private void Awake()
@@ -39,25 +52,20 @@ public class FirebaseManager : MonoBehaviour
                 GenZLog.Result("Firebase", "init", _dependencyStatus == DependencyStatus.Available, _dependencyStatus.ToString());
                 if (_dependencyStatus == DependencyStatus.Available)
                 {
-                    StartCoroutine(delay());
+                    InitializeFirebase();
                 }
                 else
                 {
+                    NotifyRemoteDataFetch(false);
                     //Debug.LogError("Could not resolve all Firebase dependencies: " + _dependencyStatus);
                 }
             });
     }
-
-    IEnumerator delay()
-    {
-        yield return new WaitForSeconds(4f);
-        InitializeFirebase();
-    }
+    
 
     private void InitializeFirebase()
     {
-        try
-        {
+       
             //Debug.Log("Enabling data collection.");
             FirebaseAnalytics.SetAnalyticsCollectionEnabled(true);
 
@@ -84,8 +92,7 @@ public class FirebaseManager : MonoBehaviour
             if (FirebaseMessagingManager.Instance != null)
                 FirebaseMessagingManager.Instance.InitializeFCM();
 
-        }
-        catch { }
+       
     }
     
     public void RefreshRemoteConfig()
@@ -125,11 +132,11 @@ public class FirebaseManager : MonoBehaviour
        
             if (fetchTask.IsCanceled)
             {
-                //Debug.Log("Fetch canceled.");
+                NotifyRemoteDataFetch(false);
             }
             else if (fetchTask.IsFaulted)
             {
-                //Debug.Log("Fetch encountered an error.");
+                NotifyRemoteDataFetch(false);
             }
             else if (fetchTask.IsCompleted)
             {
@@ -162,10 +169,12 @@ public class FirebaseManager : MonoBehaviour
                             //Debug.Log("Fetch throttled until " + info.ThrottledEndTime);
                             break;
                     }
+                    NotifyRemoteDataFetch(false);
                     break;
                 case Firebase.RemoteConfig.LastFetchStatus.Pending:
                     //Debug.Log("Latest Fetch call still pending.");
                     GenZLog.Info("RemoteConfig", "init", "fetch still pending");
+                    // Not finished: don't report it. A later fetch reports the result, or the waiting screen's timeout moves on.
                     break;
             }
       

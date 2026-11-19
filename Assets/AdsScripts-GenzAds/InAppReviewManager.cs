@@ -2,19 +2,18 @@
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.iOS;
 
 #if UNITY_ANDROID
-using Google.Play.Review;
-#elif UNITY_IOS
-UnityEngine.iOS;
+using Google.Play.Review; // Play In-App Review: Android only
 #endif
 
 public class InAppReviewManager : MonoBehaviour
 {
     public static InAppReviewManager instance;
+#if UNITY_ANDROID
     private ReviewManager _reviewManager;
     private PlayReviewInfo _playReviewInfo;
+#endif
 
 
     void Start()
@@ -26,12 +25,9 @@ public class InAppReviewManager : MonoBehaviour
 #if UNITY_ANDROID
         StartCoroutine(RequestReview());
 #elif UNITY_IOS
-UnityEngine.iOS;
-         Device.RequestStoreReview();
+        // StoreKit's review card shows over the game without sending it to background, so no App Open skip is needed.
+        UnityEngine.iOS.Device.RequestStoreReview();
 #endif
-
-       
-
     }
 
     // Seconds (real time) after the review flow ends before the App Open skip flag is cleared, if
@@ -39,6 +35,7 @@ UnityEngine.iOS;
     // often never goes to background, and Google's quota often shows no card at all.
     private const float AppOpenSkipClearDelay = 2f;
 
+#if UNITY_ANDROID
     IEnumerator RequestReview()
     {
         // Skip the App Open ad when the player returns from the review card
@@ -64,6 +61,7 @@ UnityEngine.iOS;
         yield return new WaitForSecondsRealtime(AppOpenSkipClearDelay);
         ClearAppOpenSkip();
     }
+#endif
 
     private void ClearAppOpenSkip()
     {

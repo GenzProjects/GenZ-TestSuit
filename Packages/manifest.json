@@ -3,6 +3,7 @@
     "com.coplaydev.unity-mcp": "https://github.com/CoplayDev/unity-mcp.git?path=/MCPForUnity#main",
     "com.genz.testsuit": "file:../../com.genz.testsuit",
     "com.unity.2d.animation": "13.0.4",
+    "com.unity.ads.ios-support": "1.0.1",
     "com.unity.ai.navigation": "2.0.11",
     "com.unity.collab-proxy": "2.11.4",
     "com.unity.feature.2d": "2.0.2",

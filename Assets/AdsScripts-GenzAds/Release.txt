@@ -6,6 +6,10 @@ Changes:
 - unityInApp: optional Inspector field successIAPScreen, shown when a purchase made in the session is granted, then hidden after successScreenDuration (default 1.5 s).
 - unityInApp: sets AdsManager.isPausedDuetoAd before opening the store, so no App Open ad shows when the player returns from the purchase dialog (same mechanism as InAppReviewManager).
 - unityInApp and InAppReviewManager: clear AdsManager.isPausedDuetoAd 2 s (real time) after the purchase or review flow ends. The store dialog and review card are overlays, so the app often doesn't go to background and AppOpen_Code never cleared the flag, which skipped the next real App Open ad. A failed review request clears it at once.
+- ConsentManager (new): consent screen in the first session, then starts the analytics and monetization objects and loads the next scene once Firebase Remote Config is fetched or remoteFetchTimeout (real time) passes. Monetization never starts before consent. waitForConsentToLoadFirebase: analytics wait for consent (on) or start at launch (off). waitForFirebaseForAdLoading: ads wait for the fetch / timeout (on) or start right after consent (off). Next scene by build index or name (Inspector dropdown, Editor/ConsentManagerEditor.cs).
+- ConsentManager and UmpManager, iOS only: Apple's App Tracking Transparency prompt comes first; PlayerPrefs "UMP" = 1 when tracking is allowed, 0 when not, and UmpManager shows Google's consent form only when it's 1 (a game without ConsentManager: UMP as before).
+- FirebaseManager: OnRemoteDataFetch / isFetchCompleted report when the Remote Config fetch ends (true from RemoteConfigManager.LoadValues; false on failure, cancel or Firebase unavailable; a pending fetch isn't reported). The 4 s delay before Firebase starts is removed.
+- InAppReviewManager: compiles for iOS (Play Review code inside #if UNITY_ANDROID; iOS uses UnityEngine.iOS.Device.RequestStoreReview).
 
 GenZ Ads v1.32
 

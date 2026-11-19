@@ -2,12 +2,39 @@
 using UnityEngine;
 using GoogleMobileAds.Api;
 using GoogleMobileAds.Ump.Api;
+using System.Collections;
 using System.Collections.Generic;
 
 public class UmpManager : MonoBehaviour
 {
     public bool isTestMode;
     public void Start()
+    {
+#if UNITY_IOS
+        // iOS: Apple's tracking prompt comes first (ConsentManager). Google's consent form only shows when tracking is allowed.
+        if (ConsentManager.AttPending) { StartCoroutine(StartAfterTrackingPrompt()); return; }
+        if (!TrackingAllowsUmp()) return;
+#endif
+        RequestConsentInfo();
+    }
+
+#if UNITY_IOS
+    IEnumerator StartAfterTrackingPrompt()
+    {
+        while (ConsentManager.AttPending) yield return null;
+        if (TrackingAllowsUmp()) RequestConsentInfo();
+    }
+
+    // PlayerPrefs "UMP": 1 = tracking allowed, 0 = not. Not saved (a game without ConsentManager) = UMP as usual.
+    static bool TrackingAllowsUmp()
+    {
+        if (!PlayerPrefs.HasKey(ConsentManager.AttKey) || PlayerPrefs.GetInt(ConsentManager.AttKey) == 1) return true;
+        GenZLog.Info("UMP", "init", "skipped: iOS tracking (ATT) not allowed");
+        return false;
+    }
+#endif
+
+    void RequestConsentInfo()
     {
         var debugSettings = new ConsentDebugSettings
         {
