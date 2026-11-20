@@ -1,0 +1,126 @@
+{
+    "maxVerbose": true,
+    "creativeDebugger": true,
+    "admobTestDevice": true,
+    "shakeThreshold": 2.0,
+    "actions": [
+        {
+            "name": "Interstitial (game waterfall)",
+            "load": "",
+            "ready": "",
+            "show": "AdsManager.ShowInterstitial",
+            "hide": "",
+            "requireReady": false,
+            "before": "",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "Rewarded (game waterfall)",
+            "load": "",
+            "ready": "",
+            "show": "AdsManager.ShowRewardedAd",
+            "hide": "",
+            "requireReady": false,
+            "before": "",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "MAX Interstitial",
+            "load": "AdsManager.RequestInter",
+            "ready": "AdsManager.IsMaxInterstitialReady",
+            "show": "AdsManager.ShowMaxInterstitial",
+            "hide": "",
+            "requireReady": true,
+            "before": "",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "MAX Rewarded",
+            "load": "AdsManager.RequestVideo",
+            "ready": "AdsManager.IsMaxRewardedReady",
+            "show": "AdsManager.ShowRewardedAd",
+            "hide": "",
+            "requireReady": true,
+            "before": "",
+            "showFields": "AdsManager.useSdkVendorSwitch=0",
+            "rewardField": ""
+        },
+        {
+            "name": "MAX Banner",
+            "load": "",
+            "ready": "",
+            "show": "AdsManager.ShowBanner",
+            "hide": "AdsManager.HideBanner",
+            "requireReady": false,
+            "before": "AdMob.bannerHide",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "MAX MREC",
+            "load": "",
+            "ready": "",
+            "show": "AdsManager.ShowMRECBanner",
+            "hide": "AdsManager.HideMRECBanner",
+            "requireReady": false,
+            "before": "",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "AdMob Interstitial",
+            "load": "AdMob.RequestInterstitial",
+            "ready": "AdMob.HasAdmobInterstialAvaible",
+            "show": "AdMob.ShowInterstialAd",
+            "hide": "",
+            "requireReady": true,
+            "before": "",
+            "showFields": "",
+            "rewardField": ""
+        },
+        {
+            "name": "AdMob Rewarded",
+            "load": "AdMob.RequesRewardAd",
+            "ready": "AdMob.HasRewardedAvaiable",
+            "show": "AdMob.ShowRewardAd",
+            "hide": "",
+            "requireReady": true,
+            "before": "",
+            "showFields": "",
+            "rewardField": "AdsManager._rewarded"
+        },
+        {
+            "name": "AdMob Banner",
+            "load": "AdMob.RequestBanner",
+            "ready": "",
+            "show": "AdMob.bannerShow",
+            "hide": "AdMob.bannerHide",
+            "requireReady": false,
+            "before": "AdsManager.HideBanner",
+            "showFields": "AdsManager.isBannerShowing=false",
+            "rewardField": ""
+        },
+        {
+            "name": "AdMob App Open",
+            "load": "AppOpen_Code.LoadOpenApp",
+            "ready": "",
+            "show": "AppOpen_Code.ShowAppOpenAdIfAvailable",
+            "hide": "",
+            "requireReady": false,
+            "before": "",
+            "showFields": "AdMob.isPausedDuetoAd=false",
+            "rewardField": ""
+        }
+    ],
+    "watch": [
+        "AdsGapTimer.canShowAd",
+        "AdsGapTimer.time",
+        "AdsGapTimer.timeLeft",
+        "AdsManager.useSdkVendorSwitch",
+        "AdsManager.isBannerShowing",
+        "AdMob.isPausedDuetoAd"
+    ]
+}

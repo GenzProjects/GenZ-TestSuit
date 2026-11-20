@@ -12,15 +12,33 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 3361a382e578a7249bb4b2e11cc91d36, type: 3}
   m_Name: GenZTestSuitConfig
   m_EditorClassIdentifier: 
-  configVersion: 10
+  configVersion: 12
   sdkScene: {fileID: 102900000, guid: 6f17c457ec077674d80d38ade5f31c13, type: 3}
   adsObjectName: Ads
   googleSheetUrl: https://docs.google.com/spreadsheets/d/1nd87c3FFAHqOhtNIN2ZqVyXlNlSfsQJo2YjL1wh9UMk/edit?gid=0#gid=0
   sheetTabs:
   - name: Android Games ID's
     gid: 0
+    keyOnly: 0
   - name: Android Max ID's
     gid: 1078150226
+    keyOnly: 0
+  - name: Stors
+    gid: 405200962
+    keyOnly: 0
+  iosSheetTabs:
+  - name: IOS Games ID's
+    gid: 223612715
+    keyOnly: 0
+  - name: IOS MAX Ids
+    gid: 1122691852
+    keyOnly: 0
+  - name: Stors
+    gid: 405200962
+    keyOnly: 0
+  - name: Android Max ID's
+    gid: 1078150226
+    keyOnly: 1
   verifyAgainstSheet: 1
   packageColumnNames:
   - Package Name
@@ -42,6 +60,34 @@ MonoBehaviour:
     - Firebase.App
     - Firebase.Analytics
     - Firebase.RemoteConfig
+    gaAdFormatFallback:
+    - Interstitial|INTER
+    - Rewarded|REWARDED
+    - Banner|BANNER
+    - App Open|APP_OPEN
+    maxAdapters:
+    - BidMachine|com.applovin.mediation:bidmachine-adapter|AppLovinMediationBidMachineAdapter
+    - Bigo Ads|com.applovin.mediation:bigoads-adapter|AppLovinMediationBigoAdsAdapter
+    - Pangle (ByteDance)|com.applovin.mediation:bytedance-adapter|AppLovinMediationByteDanceAdapter
+    - Meta Audience Network (Facebook)|com.applovin.mediation:facebook-adapter|AppLovinMediationFacebookAdapter
+    - DT Exchange (Fyber)|com.applovin.mediation:fyber-adapter|AppLovinMediationFyberAdapter
+    - Google AdMob|com.applovin.mediation:google-adapter|AppLovinMediationGoogleAdapter
+    - Google Ad Manager|com.applovin.mediation:google-ad-manager-adapter|AppLovinMediationGoogleAdManagerAdapter
+    - InMobi|com.applovin.mediation:inmobi-adapter|AppLovinMediationInMobiAdapter
+    - Mintegral|com.applovin.mediation:mintegral-adapter|AppLovinMediationMintegralAdapter
+    - Smaato|com.applovin.mediation:smaato-adapter|AppLovinMediationSmaatoAdapter
+    - Unity Ads|com.applovin.mediation:unityads-adapter|AppLovinMediationUnityAdsAdapter
+    - Liftoff Monetize (Vungle)|com.applovin.mediation:vungle-adapter|AppLovinMediationVungleAdapter
+    - Yandex|com.applovin.mediation:yandex-adapter|AppLovinMediationYandexAdapter
+    - YSO Network|com.applovin.mediation:yso-network-adapter|AppLovinMediationYSONetworkAdapter
+    - AdSurge (custom network)|com.adsurge.sdk:adapter-for-max|
+    - Helix / Voodoo ADN (custom network)|io.adn:adn-applovin-adapter|
+    forbiddenAdapters:
+    - IronSource|com.applovin.mediation:ironsource-adapter|AppLovinMediationIronSourceAdapter
+    - IronSource SDK|com.ironsource.sdk:|IronSourceSDK
+    - IronSource / LevelPlay SDK|com.unity3d.ads-mediation:|
+    adapterPattern: ^com\.applovin\.mediation:[\w.-]+-adapter$|adapter-for-max|applovin-adapter|max-adapter
+    iosAdapterPattern: ^AppLovinMediation\w+Adapter$|ApplovinAdapter|MaxAdapter
   playerSettings:
     enabled: 1
     autoGraphicsApi: 0
@@ -55,7 +101,19 @@ MonoBehaviour:
     - ARMv7
     - ARM64
     minSdk: 24
+    minSdkUnity6: 1800000019000000
     targetSdk: 36
+    showSplashScreenUnity6: 0
+  signing:
+    enabled: 1
+    sheetColumns:
+    - KeyStore
+    - Keystore Name
+    - Keystore Alias
+    - Signing Key
+    keystoreExtensions:
+    - .keystore
+    - .jks
   taichi:
     enabled: 1
     managerClasses:
@@ -87,6 +145,40 @@ MonoBehaviour:
     - Taichi 2.0 Default
     - Taichi Default Values
     - Taichi 2.0
+  storeLinks:
+    enabled: 1
+    storeColumns:
+    - Store Name
+    - Store
+    useLastStoreColumn: 1
+    privacyColumns:
+    - Privicy Policy
+    - Privacy Policy
+    - Privacy Policy URL
+    moreGamesColumns:
+    - Link
+    - Store Link
+    - More Games
+    - More Games Link
+    privacyMethodPattern: privacy|policy
+    privacyUrlPattern: privacy|privicy|policy
+    moreGamesMethodPattern: more_?games?|other_?games|developer|publisher
+    moreGamesUrlPattern: play\.google\.com/store/apps/dev|market://(dev\?|search\?q=pub:)|apps\.apple\.com/.*developer/|itms-apps://.*developer
+    linkFieldPattern: url|link
+    excludeFolders:
+    - GoogleMobileAds
+    - MaxSdk
+    - Firebase
+    - GameAnalytics
+    - Adjust
+    - AppMetrica
+    - ExternalDependencyManager
+    - Dreamteck
+    - Demigiant
+    - NiceVibrations
+    - TextMesh Pro
+    - GenZ-TestSuit
+    - GenZ-DeepTest
   codeChecks:
     enabled: 1
     adScripts:
@@ -118,6 +210,10 @@ MonoBehaviour:
     - UmpManager
     - unityInApp
     - AdsGapTimer
+    requiredScriptsV133:
+    - RemoteConfigManager
+    - GenZLog
+    - ConsentManager
     gapTimerClass: AdsGapTimer
     resetMethods:
     - ResetTimer
@@ -148,6 +244,12 @@ MonoBehaviour:
     - NiceVibrations
     - TextMesh Pro
     - Kits
+    adsScriptsVersion: 
+    appOpenSkipFlags:
+    - isPausedDuetoAd
+    platformOnlyApis:
+    - iOS|\bUnity\.Advertisement\.IosSupport\b|\bATTrackingStatusBinding\b|\bSkAdNetworkBinding\b
+    - Android|\bGoogle\.Play\.(Review|Core|Common|AppUpdate)\b|\bReviewManager\b|\bPlayReviewInfo\b|\bReviewErrorCode\b
   apk:
     requiredSdks:
     - MAX
@@ -370,6 +472,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: AdMob
     target: 0
     scriptNames:
@@ -398,6 +502,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Interstitial ID
       fieldNames:
       - interstitialID
@@ -414,6 +520,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Rewarded ID
       fieldNames:
       - rewardID
@@ -429,6 +537,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Test IDs switch is OFF
       fieldNames:
       - isTestIdOn
@@ -441,6 +551,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: AdsManager (AppLovin MAX)
     target: 0
     scriptNames:
@@ -469,6 +581,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: MAX Interstitial ID
       fieldNames:
       - InterstitialAdUnitId_Android
@@ -485,6 +599,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: MAX Banner ID
       fieldNames:
       - BannerAdUnitId
@@ -499,6 +615,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: MAX Rewarded ID
       fieldNames:
       - RewardedAdUnitId_Android
@@ -514,6 +632,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: MAX MREC ID
       fieldNames:
       - MRecAdUnitId
@@ -528,6 +648,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: AppOpen_Code
     target: 0
     scriptNames:
@@ -557,6 +679,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: FirebaseManager
     target: 0
     scriptNames:
@@ -589,6 +713,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Taichi 2.0 default impressions > 0
       fieldNames:
       - taichi2DefaultImpressions
@@ -599,6 +725,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: Analytics
     target: 0
     scriptNames:
@@ -649,6 +777,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Environment is Production
       fieldNames:
       - environment
@@ -659,6 +789,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: AppMetrica
     target: 1
     scriptNames:
@@ -687,6 +819,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: GameAnalytics (object)
     target: 1
     scriptNames:
@@ -726,6 +860,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: UmpManager (AdMob consent)
     target: 1
     scriptNames:
@@ -754,6 +890,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: GameAnalytics Settings
     target: 2
     scriptNames:
@@ -778,6 +916,8 @@ MonoBehaviour:
       platformListField: Platforms
       platformName: Android
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: IPhonePlayer|iOS
     - label: Secret Key (Android)
       fieldNames:
       - secretKey
@@ -790,6 +930,8 @@ MonoBehaviour:
       platformListField: Platforms
       platformName: Android
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: IPhonePlayer|iOS
     - label: Send Version is ON
       fieldNames:
       - UsePlayerSettingsBuildNumber
@@ -800,6 +942,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: Google Mobile Ads Settings
     target: 2
     scriptNames:
@@ -824,6 +968,9 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames:
+      - adMobIOSAppId
+      iosPlatformName: 
     - label: Optimize Initialization is ON
       fieldNames:
       - optimizeInitialization
@@ -834,6 +981,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
     - label: Optimize Ad Loading is ON
       fieldNames:
       - optimizeAdLoading
@@ -844,6 +993,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: 
+      iosFieldNames: []
+      iosPlatformName: 
   - label: AppLovin Settings (Integration Manager)
     target: 2
     scriptNames:
@@ -869,6 +1020,8 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: AdsManager (AppLovin MAX)/MAX SDK Key
+      iosFieldNames: []
+      iosPlatformName: 
     - label: AdMob Android App ID
       fieldNames:
       - adMobAndroidAppId
@@ -881,3 +1034,7 @@ MonoBehaviour:
       platformListField: 
       platformName: 
       sameAs: Google Mobile Ads Settings/Android App ID
+      iosFieldNames:
+      - adMobIosAppId
+      - adMobIOSAppId
+      iosPlatformName: 

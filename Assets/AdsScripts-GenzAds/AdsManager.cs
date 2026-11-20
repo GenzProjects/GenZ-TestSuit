@@ -584,39 +584,7 @@ public class AdsManager : MonoBehaviour
     string _placementName = "";
 
     // ****************** Revenue Paid Events ***************************
-    
-    private void AdRevenuePaidEvent_Common(string adUnitId, MaxSdkBase.AdInfo impressionData)
-    {
-       
-        double revenue = impressionData.Revenue;
-        var impressionParameters = new[] {
-            new Firebase.Analytics.Parameter("ad_platform", "AppLovin"),
-            new Firebase.Analytics.Parameter("ad_source", impressionData.NetworkName),
-            new Firebase.Analytics.Parameter("ad_unit_name", impressionData.AdUnitIdentifier),
-            new Firebase.Analytics.Parameter("ad_format", impressionData.AdFormat),
-            new Firebase.Analytics.Parameter("value", revenue),
-            new Firebase.Analytics.Parameter("currency", "USD"), // All AppLovin revenue is sent in USD
-        };
-        Firebase.Analytics.FirebaseAnalytics.LogEvent("ad_impression", impressionParameters);
 
-        FirebaseManager.Instance.CheckTheRevenue(revenue);
-        FirebaseManager.Instance.CheckTheImpressionForRevenue(revenue);
-
-        //Rev Event For Adjust
-        AdjustAdRevenue adjustAdRevenue = new AdjustAdRevenue("applovin_max_sdk");
-        adjustAdRevenue.SetRevenue(revenue, "USD");
-        adjustAdRevenue.AdRevenueNetwork = impressionData.NetworkName;
-        adjustAdRevenue.AdRevenueUnit = $"{impressionData.AdFormat}_{impressionData.AdUnitIdentifier}";
-        Adjust.TrackAdRevenue(adjustAdRevenue);
-
-        GenZLog.Ok("Ads", "impression", "MAX Interstitial");
-        GenZLog.Call("Adjust", "ad_revenue", "MAX Interstitial");
-        AppmetricaAnalytics.ReportRevenue_Applovin(impressionData, AppmetricaAnalytics.AdFormat.Interstitial, _placementName);
-
-        Debug.Log("MAX Rev: " + revenue);
-
-        GA_Aanalytics.GA_IntEvent_MAX();
-    }
     private void AdRevenuePaidEvent_Inter(string adUnitId, MaxSdkBase.AdInfo impressionData)
     {
        

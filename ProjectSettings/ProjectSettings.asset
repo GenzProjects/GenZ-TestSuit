@@ -820,7 +820,7 @@ PlayerSettings:
   webWasm2023: 0
   webEnableSubmoduleStrippingCompatibility: 0
   scriptingDefineSymbols:
-    Android: DREAMTECK_SPLINES;gameanalytics_max_enabled;gameanalytics_admob_enabled;MOREMOUNTAINS_NICEVIBRATIONS
+    Android: DREAMTECK_SPLINES;gameanalytics_max_enabled;gameanalytics_admob_enabled;MOREMOUNTAINS_NICEVIBRATIONS;GENZ_DEEP_TEST
     Standalone: DREAMTECK_SPLINES;MOREMOUNTAINS_NICEVIBRATIONS
     iPhone: gameanalytics_max_enabled;gameanalytics_admob_enabled
   additionalCompilerArguments: {}
