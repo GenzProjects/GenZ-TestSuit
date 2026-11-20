@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Linq;
 using UnityEditor;

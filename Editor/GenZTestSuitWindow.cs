@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System.Collections.Generic;
 using System.Linq;
 using UnityEditor;
@@ -52,13 +52,6 @@ namespace GenZ.TestSuit
         {
             var w = GetWindow<GenZTestSuitWindow>(GenZTestSuitInfo.Name);
             w.minSize = new Vector2(560, 420);
-        }
-
-        [MenuItem("GenZ/Run Editor Test Suit", priority = 101)]
-        static void RunFromMenu()
-        {
-            Open();
-            GetWindow<GenZTestSuitWindow>().RunEditorSuite();
         }
 
         void OnEnable()
@@ -145,8 +138,14 @@ namespace GenZ.TestSuit
                 EditorApplication.delayCall += LoadSheetGames;
             }
 
+            // iOS build target: the APK and Deep tabs (adb, logcat, APK files, the Android phone panel) are Android only, so hidden.
+            if (IosTarget && tab != 0) { tab = 0; stepFilter = null; scroll = Vector2.zero; }
+
             DrawHeader();
             DrawTabs();
+            if (IosTarget)
+                EditorGUILayout.HelpBox("Build target is iOS: the APK and Deep tabs are Android only (they install and read the game over adb), so they're hidden. "
+                                        + "The Editor checks follow the iOS target. Switch to Android in Build Settings to see them again.", MessageType.Info);
             EditorGUILayout.Space(6);
 
             if (tab == 0) DrawEditorSuite();
@@ -207,15 +206,18 @@ namespace GenZ.TestSuit
             }
         }
 
-        // Three cards: icon, name and what it checks. The selected one is filled with the accent colour.
+        static bool IosTarget => EditorUserBuildSettings.activeBuildTarget == BuildTarget.iOS;
+
+        // Three cards (only the Editor one with the iOS build target): icon, name and what it checks. The selected one is filled with the accent colour.
         void DrawTabs()
         {
             const float Height = 46, Gap = 6;
             var row = GUILayoutUtility.GetRect(0, Height, GUILayout.ExpandWidth(true));
             row.x += 4; row.width -= 8;
-            float w = (row.width - Gap * (Tabs.Length - 1)) / Tabs.Length;
+            int count = IosTarget ? 1 : Tabs.Length;
+            float w = (row.width - Gap * (count - 1)) / count;
 
-            for (int i = 0; i < Tabs.Length; i++)
+            for (int i = 0; i < count; i++)
             {
                 var r = new Rect(row.x + i * (w + Gap), row.y, w, Height);
                 bool selected = tab == i, hover = r.Contains(Event.current.mousePosition);
@@ -279,7 +281,9 @@ namespace GenZ.TestSuit
                     EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.googleSheetUrl)),
                         new GUIContent("Google Sheet Link", "Sheet with all games' IDs. Must be viewable by anyone with the link. Empty = studio default sheet."));
                     EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.sheetTabs)),
-                        new GUIContent("Sheet Tabs", "Tabs to read, by name: their tables are combined (e.g. the games tab and the MAX tab). None found = the tab in the link."), true);
+                        new GUIContent("Sheet Tabs (Android)", "Tabs to read, by name: their tables are combined (e.g. the games tab and the MAX tab). None found = the tab in the link."), true);
+                    EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.iosSheetTabs)),
+                        new GUIContent("Sheet Tabs (iOS)", "Read instead when the build target is iOS: the iOS games and MAX tabs, Stors, and the Android MAX tab for the shared MAX SDK key only (Key Only)."), true);
                     EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.verifyAgainstSheet)),
                         new GUIContent("Verify Against Sheet"));
                     EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.runIdChecks)),
@@ -290,6 +294,8 @@ namespace GenZ.TestSuit
                         new GUIContent("Run Code Checks", "Step 4: ad waterfall, show/hide, reloads, revenue events, AdsGapTimer resets, Remote Config"));
                     EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.taichi)).FindPropertyRelative(nameof(TaichiSettings.enabled)),
                         new GUIContent("Run Taichi Checks", "Step 3: Taichi 1.0 / 2.0 switched on, events wired to every ad revenue, Remote Config thresholds, sheet value"));
+                    EditorGUILayout.PropertyField(configSO.FindProperty(nameof(GenZTestSuitConfig.storeLinks)).FindPropertyRelative(nameof(StoreLinkSettings.enabled)),
+                        new GUIContent("Check Store Links", "Step 1: the privacy policy and More Games links (buttons, scenes, prefabs, scripts) equal the game's store links in the sheet's \"Stors\" tab"));
                     DrawGamePicker(apkTab: false);
                 }
                 EditorGUIUtility.labelWidth = prevLabelWidth;
@@ -474,9 +480,10 @@ namespace GenZ.TestSuit
                         EditorStyles.wordWrappedMiniLabel);
                 }
                 GUILayout.FlexibleSpace();
-                using (new EditorGUILayout.VerticalScope())
+                // No vertical FlexibleSpace here: it makes this box take all the free height and pushes the results down.
+                using (new EditorGUILayout.VerticalScope(GUILayout.ExpandHeight(false)))
                 {
-                    GUILayout.FlexibleSpace(); // centre the buttons on the two text lines
+                    GUILayout.Space(3); // roughly centred on the two text lines
                     using (new EditorGUILayout.HorizontalScope())
                     {
                         // outside OnGUI: both open and save scenes
@@ -484,7 +491,6 @@ namespace GenZ.TestSuit
                         GUILayout.Space(6);
                         if (CorrectWrongButton(30)) EditorApplication.delayCall += AutoCorrectWrongIds;
                     }
-                    GUILayout.FlexibleSpace();
                 }
             }
         }
@@ -507,15 +513,14 @@ namespace GenZ.TestSuit
                         EditorStyles.wordWrappedMiniLabel);
                 }
                 GUILayout.FlexibleSpace();
-                using (new EditorGUILayout.VerticalScope())
+                using (new EditorGUILayout.VerticalScope(GUILayout.ExpandHeight(false)))
                 {
-                    GUILayout.FlexibleSpace();
+                    GUILayout.Space(3); // no vertical FlexibleSpace: it would stretch this box over the results
                     if (SolidButton(30, "Fix GA Ad Formats",
                             "Set the ad format strings in GAAdMobIntegration.cs to the ones GAMaxIntegration.cs sends, so GameAnalytics reports AdMob and MAX under one format:\n"
                             + string.Join("\n", fixes.Select(f => $"• {f.label}: \"{f.current}\" → \"{f.expected}\"")) + "\nShows the change and asks first.",
                             CorrectColor, "d_Valid", "Valid"))
                         EditorApplication.delayCall += FixGaAdFormats;
-                    GUILayout.FlexibleSpace();
                 }
             }
         }

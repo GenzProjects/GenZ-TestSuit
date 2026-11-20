@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -274,15 +274,29 @@ namespace GenZ.TestSuit
         public static void CheckSession(TestReport report, List<LogLine> log, ApkInfo apk, ApkSettings s, TaichiSettings taichi, bool final, string sheetTaichi = null)
         {
             var genz = GenZLines(log);
+            // GenZ Ads v1.32 builds have no GenZLog: the game ran (Unity lines) but wrote no [GenZ] line. Then the checks that
+            // read [GenZ] lines (SDK starts, server answers, impressions, revenue reports) are skipped, the others still run.
+            bool legacy = final && genz.Count == 0 && log.Any(l => l.tag == "Unity");
             CheckNotTestBuild(report, genz, final);
-            CheckSdkInit(report, genz, s, final);
+            if (legacy) ReportLegacyBuild(report);
+            else CheckSdkInit(report, genz, s, final);
             CheckFirebase(report, log, s, final);
             CheckGameAnalytics(report, log, genz, apk, s, final);
             var impressions = genz.Where(g => g.sdk == "Ads" && g.what == "impression").ToList();
-            CheckAdjust(report, log, genz, impressions, s, final);
-            CheckAppMetrica(report, genz, impressions, final);
-            CheckAds(report, log, genz, impressions, s, taichi, final, sheetTaichi);
+            CheckAdjust(report, log, genz, impressions, s, final, legacy);
+            CheckAppMetrica(report, genz, impressions, final, legacy);
+            CheckAds(report, log, genz, impressions, s, taichi, final, sheetTaichi, legacy);
             CheckStability(report, log, apk, final);
+        }
+
+        const string NeedsV133 = "Needs the [GenZ] log lines of GenZ Ads v1.33 (GenZLog); this build has none, so it's read as a v1.32 build";
+
+        static void ReportLegacyBuild(TestReport report)
+        {
+            report.Section("SDK initialization", TestStage.SdkInit).Add("GenZ Ads package", CheckStatus.Warn, "v1.32 build (no [GenZ] lines)",
+                "The game ran but wrote no [GenZ] lines, so it's checked as a GenZ Ads v1.32 build: SDK starts, server answers, impressions and revenue "
+                + "reports can't be read and are skipped; Firebase, GameAnalytics, Taichi events and crashes are still checked. "
+                + "If this game uses v1.33, GenZLog isn't working: check GenZLog.cs and its calls are in AdsScripts-GenzAds.");
         }
 
         /// <summary>A build made in GenZ-DeepTestSuit's Test Environment writes "[GenZ] DeepTest|build|…" when it starts.</summary>
@@ -407,21 +421,28 @@ namespace GenZ.TestSuit
             sec.Add("No GA errors", errors.Count == 0 ? CheckStatus.Pass : CheckStatus.Fail, errors.Count.ToString(), errors.Count == 0 ? "" : FirstFew(errors));
         }
 
-        static void CheckAdjust(TestReport report, List<LogLine> log, List<GenZLine> genz, List<GenZLine> impressions, ApkSettings s, bool final)
+        static void CheckAdjust(TestReport report, List<LogLine> log, List<GenZLine> genz, List<GenZLine> impressions, ApkSettings s, bool final, bool legacy)
         {
             var sec = report.Section("Adjust", TestStage.Events);
+            var errors = log.Where(l => l.tag == s.adjustTag && (l.level == 'E' || l.level == 'W')).Select(l => l.msg).ToList();
+            if (legacy)
+            {
+                sec.Add("Server answer and ad revenue", CheckStatus.Info, "v1.32 build", NeedsV133);
+                if (errors.Count > 0) sec.Add("SDK errors", CheckStatus.Warn, errors.Count.ToString(), FirstFew(errors));
+                return;
+            }
             var init = genz.LastOrDefault(g => g.sdk == "Adjust" && g.what == "init");
             sec.Add("Server answered", init == null ? Missing(final) : init.Ok ? CheckStatus.Pass : CheckStatus.Fail, init?.detail ?? "",
                 init == null ? Waiting(final, "No answer reported (GenZLog.ProbeServers waits up to 60 s)") : init.Ok ? "Adjust tracked the session" : "");
             int sent = genz.Count(g => g.sdk == "Adjust" && g.what == "ad_revenue");
             sec.Add("Ad revenue sent", RevenueStatus(sent, impressions.Count, final), $"{sent} of {impressions.Count} impressions", RevenueMessage("Adjust", sent, impressions.Count, final));
-            var errors = log.Where(l => l.tag == s.adjustTag && (l.level == 'E' || l.level == 'W')).Select(l => l.msg).ToList();
             if (errors.Count > 0) sec.Add("SDK errors", CheckStatus.Warn, errors.Count.ToString(), FirstFew(errors));
         }
 
-        static void CheckAppMetrica(TestReport report, List<GenZLine> genz, List<GenZLine> impressions, bool final)
+        static void CheckAppMetrica(TestReport report, List<GenZLine> genz, List<GenZLine> impressions, bool final, bool legacy)
         {
             var sec = report.Section("AppMetrica", TestStage.Events);
+            if (legacy) { sec.Add("Server answer, events and ad revenue", CheckStatus.Info, "v1.32 build", NeedsV133); return; }
             var init = genz.LastOrDefault(g => g.sdk == "AppMetrica" && g.what == "init");
             sec.Add("Server answered", init == null ? Missing(final) : init.Ok ? CheckStatus.Pass : CheckStatus.Fail, init?.detail ?? "",
                 init == null ? Waiting(final, "No answer reported (GenZLog.ProbeServers waits up to 60 s)") : init.Ok ? "AppMetrica's startup server answered" : "");
@@ -439,19 +460,28 @@ namespace GenZ.TestSuit
             impressions == 0 ? Waiting(final, "No ad impression in this session") :
             sent >= impressions ? "Every impression reported" : $"{impressions - sent} impression(s) not reported to {sdk}";
 
-        static void CheckAds(TestReport report, List<LogLine> log, List<GenZLine> genz, List<GenZLine> impressions, ApkSettings s, TaichiSettings taichi, bool final, string sheetTaichi)
+        static void CheckAds(TestReport report, List<LogLine> log, List<GenZLine> genz, List<GenZLine> impressions, ApkSettings s, TaichiSettings taichi, bool final, string sheetTaichi, bool legacy = false)
         {
             var sec = report.Section("Ad impressions", TestStage.Ads);
-            foreach (var g in impressions.GroupBy(i => i.detail).OrderBy(g => g.Key))
-                sec.Add(g.Key, CheckStatus.Pass, "×" + g.Count(), "Shown, and its revenue reported");
-            foreach (var f in s.adFormats)
-                if (!impressions.Any(i => i.detail.EndsWith(" " + f, StringComparison.OrdinalIgnoreCase)))
-                    sec.Add(f, Missing(final, CheckStatus.Warn), "not shown", Waiting(final, "No impression of this format in the session: show one to test it"));
-
             var fa = log.Where(l => l.tag == "FA" || l.tag == "FA-SVC").ToList();
             var eventRx = new Regex(s.firebaseEventPattern);
             var events = fa.Select(l => eventRx.Match(l.msg)).Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
             int adImpressions = events.Count(e => e == "ad_impression");
+
+            if (legacy)
+            {
+                // v1.32: impressions per format can't be read; Firebase's ad_impression events still show that ads were shown.
+                sec.Add("Impressions per format", CheckStatus.Info, "v1.32 build", NeedsV133);
+                sec.Add("Firebase ad_impression", adImpressions > 0 ? CheckStatus.Pass : Missing(final, CheckStatus.Warn), adImpressions.ToString(),
+                    adImpressions > 0 ? "Ads were shown and reported to Firebase" : "No ad_impression event in this session: show an ad to test it");
+            }
+            foreach (var g in impressions.GroupBy(i => i.detail).OrderBy(g => g.Key))
+                sec.Add(g.Key, CheckStatus.Pass, "×" + g.Count(), "Shown, and its revenue reported");
+            if (!legacy)
+            foreach (var f in s.adFormats)
+                if (!impressions.Any(i => i.detail.EndsWith(" " + f, StringComparison.OrdinalIgnoreCase)))
+                    sec.Add(f, Missing(final, CheckStatus.Warn), "not shown", Waiting(final, "No impression of this format in the session: show one to test it"));
+
             if (impressions.Count > 0)
                 sec.Add("Firebase ad_impression", adImpressions >= impressions.Count ? CheckStatus.Pass : CheckStatus.Warn, $"{adImpressions} of {impressions.Count}",
                     adImpressions >= impressions.Count ? "Every impression reached Firebase" : "Fewer ad_impression events than impressions (Firebase may log them a few seconds later)");
@@ -464,6 +494,8 @@ namespace GenZ.TestSuit
                 if (n != null && n.Success)
                     tsec.Add("2.0 impression count = sheet", n.Groups[1].Value == sheetTaichi.Trim() ? CheckStatus.Pass : CheckStatus.Fail, n.Groups[1].Value,
                         n.Groups[1].Value == sheetTaichi.Trim() ? "Remote Config gave the sheet's value" : $"The sheet says {sheetTaichi.Trim()}: fix custom_imp in Remote Config");
+                else if (legacy)
+                    tsec.Add("2.0 impression count = sheet", CheckStatus.Info, "v1.32 build", $"The sheet says {sheetTaichi.Trim()}. " + NeedsV133 + " (the Remote Config values line)");
                 else
                     tsec.Add("2.0 impression count = sheet", Missing(final, CheckStatus.Warn), "", Waiting(final, $"The sheet says {sheetTaichi.Trim()}; no Remote Config values were logged to compare"));
             }

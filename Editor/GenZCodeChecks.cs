@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -56,6 +56,8 @@ namespace GenZ.TestSuit
         const string SectionLogic = "Code · Other logic checks";
         const string SectionAdsVersion = "Code · Ad scripts version (GenzMonetization)";
         const string SectionAppOpenSkip = "Code · No App Open ad after a purchase or review";
+        const string SectionPlatform = "Code · Platform-only code (Android and iOS builds)";
+        const string SectionStartup = "Code · Startup order (consent, App Tracking, Remote Config)";
 
         class Ctx
         {
@@ -66,6 +68,8 @@ namespace GenZ.TestSuit
             public List<MethodInfo> adMethods, gameMethods;
             public Regex resetRx, gateRx;
             public HashSet<string> delegateFields;   // callback fields declared in the ad scripts (e.g. _rewarded)
+            public bool? ios;                        // build target: true = iOS, false = Android, null = both
+            public AdsPackage pkg;                   // the GenZ Ads version the project uses: checks follow it
             HashSet<string> uiMethods;
             /// <summary>Method names wired to UI/animation events in scenes and prefabs (m_MethodName), read once.</summary>
             public HashSet<string> UiMethods
@@ -101,9 +105,12 @@ namespace GenZ.TestSuit
             "OnTriggerEnter", "OnTriggerEnter2D", "OnCollisionEnter", "OnCollisionEnter2D", "OnBecameVisible"
         };
 
-        public static void Run(TestReport report, CodeCheckSettings settings, GenZSourceModel model = null)
+        /// <param name="ios">The build target: true = iOS, false = Android, null = both (platform-only code then fails for both builds).</param>
+        public static void Run(TestReport report, CodeCheckSettings settings, GenZSourceModel model = null, bool? ios = null)
         {
             var ctx = MakeCtx(settings, model ?? GenZSourceModel.Load(settings.excludeFolders));
+            ctx.ios = ios;
+            ctx.pkg = DetectAdsVersion(AdsScriptsFolder(ctx));
             CheckScripts(report.Section(SectionScripts, TestStage.Integration), ctx);
             CheckAdsScriptsVersion(report.Section(SectionAdsVersion, TestStage.AdCalling), ctx);
             CheckWaterfall(report.Section(SectionWaterfall, TestStage.AdCalling), ctx);
@@ -114,6 +121,8 @@ namespace GenZ.TestSuit
             CheckRemoteConfig(report.Section(SectionRemote, TestStage.AdCalling), ctx);
             CheckRemoteDefaults(report.Section(SectionRemoteDefaults, TestStage.AdCalling), ctx);
             CheckAppOpenSkip(report.Section(SectionAppOpenSkip, TestStage.AdCalling), ctx);
+            CheckPlatformCode(report.Section(SectionPlatform, TestStage.AdCalling), ctx);
+            CheckStartupOrder(report.Section(SectionStartup, TestStage.AdCalling), ctx);
             CheckLogic(report.Section(SectionLogic, TestStage.AdCalling), ctx);
         }
 
@@ -129,6 +138,10 @@ namespace GenZ.TestSuit
             var headerRx = new Regex(@"^\s*//\s*" + Regex.Escape(header) + @"(\d+(?:\.\d+)*)\b", RegexOptions.IgnoreCase);
 
             var folder = AdsScriptsFolder(ctx);
+            sec.Add("Checked as", CheckStatus.Info, "GenZ Ads " + ctx.pkg.Label,
+                $"Found from {ctx.pkg.how}. " + (ctx.pkg.V133
+                    ? "v1.33 features (consent screen, App Open skip on purchases, GenZLog, RemoteConfigManager) are required."
+                    : "Features added in v1.33 are only reported, not required."));
             if (folder == null)
             {
                 sec.Add("Ad scripts folder", CheckStatus.Warn, "not found",
@@ -158,8 +171,11 @@ namespace GenZ.TestSuit
 
             if (stated.Count == 0)
             {
-                sec.Add("Version header", CheckStatus.Warn, "none",
-                    $"No script in {folder} starts with \"// {header}…\": these ad scripts are from before v1.33. Update them to {header}{expected}");
+                // v1.32 scripts have no version line; a v1.33 package without them (found from Release.txt / GenZLog) must add them.
+                sec.Add("Version header", ctx.pkg.V133 ? CheckStatus.Fail : CheckStatus.Info, "none",
+                    ctx.pkg.V133
+                        ? $"The scripts are v{ctx.pkg.version} ({ctx.pkg.how}) but none starts with \"// {header}{ctx.pkg.version}\": add it as the first line of every script in {folder}"
+                        : $"No script in {folder} starts with \"// {header}…\": a GenZ Ads v1.32 package (the line starts with v1.33). Checked as v1.32; the latest release is {header}{expected}");
                 return;
             }
 
@@ -208,6 +224,59 @@ namespace GenZ.TestSuit
                         release.Replace('\\', '/'), 1);
                 }
             }
+        }
+
+        /// <summary>The GenZ Ads package a project uses, and how that was found. The checks follow it: features added in v1.33
+        /// (consent screen, App Open skip on purchases, GenZLog…) are required from a v1.33 project and only reported for v1.32.</summary>
+        public class AdsPackage
+        {
+            public string version = "1.32";
+            public string how = "";
+            public string folder;
+            public bool AtLeast(string v) => VersionComparer.Compare(version, v) >= 0;
+            public bool V133 => AtLeast("1.33");
+            public string Label => "v" + version;
+        }
+
+        /// <summary>
+        /// Which GenZ Ads version the project's ad scripts are: the "// GenzMonetization-v…" line most scripts start with; else the
+        /// newest version in the folder's Release.txt; else v1.33 when GenZLog / RemoteConfigManager is there; else v1.32.
+        /// Reads files only (no model, no UnityEditor), so the Editor and APK suites can call it too.
+        /// </summary>
+        public static AdsPackage DetectAdsVersion(string folder = null)
+        {
+            var p = new AdsPackage { folder = folder ?? FindAdsScriptsFolder() };
+            if (p.folder == null || !System.IO.Directory.Exists(p.folder)) { p.how = "no ad scripts folder found, so v1.32 is assumed"; return p; }
+
+            var headerRx = new Regex(@"^\s*//\s*" + Regex.Escape(GenZTestSuitInfo.AdsScriptsHeader) + @"(\d+(?:\.\d+)*)\b", RegexOptions.IgnoreCase);
+            var files = System.IO.Directory.GetFiles(p.folder, "*.cs", System.IO.SearchOption.AllDirectories)
+                .Where(f => f.Replace('\\', '/').IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) < 0).ToList();
+            var stated = files.Select(f => headerRx.Match(System.IO.File.ReadLines(f).Select(l => l.TrimStart('﻿')).FirstOrDefault(l => l.Trim().Length > 0) ?? ""))
+                .Where(m => m.Success).Select(m => m.Groups[1].Value).ToList();
+            if (stated.Count > 0)
+            {
+                p.version = stated.GroupBy(v => v).OrderByDescending(g => g.Count()).ThenByDescending(g => g.Key, VersionComparer).First().Key;
+                p.how = $"the \"// {GenZTestSuitInfo.AdsScriptsHeader}{p.version}\" line in {stated.Count(v => v == p.version)} of {files.Count} scripts";
+                return p;
+            }
+            var release = System.IO.Path.Combine(p.folder, "Release.txt");
+            var rm = System.IO.File.Exists(release) ? Regex.Match(System.IO.File.ReadAllText(release), @"\bv(\d+(?:\.\d+)+)") : Match.Empty;
+            if (rm.Success) { p.version = rm.Groups[1].Value; p.how = "the newest entry in Release.txt (scripts have no version line)"; return p; }
+            bool newer = files.Any(f => { var n = System.IO.Path.GetFileNameWithoutExtension(f); return n == "GenZLog" || n == "RemoteConfigManager"; });
+            p.version = newer ? "1.33" : "1.32";
+            p.how = newer ? "GenZLog / RemoteConfigManager are there (scripts have no version line)" : "no version line, no Release.txt, no GenZLog: an older package";
+            return p;
+        }
+
+        static string FindAdsScriptsFolder()
+        {
+            if (!System.IO.Directory.Exists("Assets")) return null;
+            var manager = System.IO.Directory.GetFiles("Assets", "AdsManager.cs", System.IO.SearchOption.AllDirectories).Select(f => f.Replace('\\', '/'))
+                .Where(f => f.IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) < 0).OrderBy(f => f.Length).FirstOrDefault();
+            if (manager != null) return System.IO.Path.GetDirectoryName(manager)?.Replace('\\', '/');
+            return System.IO.Directory.GetDirectories("Assets", "AdsScripts*", System.IO.SearchOption.AllDirectories)
+                .Select(d => d.Replace('\\', '/')).Where(d => d.IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) < 0)
+                .OrderBy(d => d.Length).FirstOrDefault();
         }
 
         // The folder holding AdsManager (the main ad script); else a folder under Assets named AdsScripts….
@@ -264,6 +333,19 @@ namespace GenZ.TestSuit
             sec.Add("Required scripts", missing.Count == 0 ? CheckStatus.Pass : CheckStatus.Fail,
                 missing.Count == 0 ? c.s.requiredScripts.Length + " found" : "Missing: " + string.Join(", ", missing),
                 $"Scanned {c.model.files.Count} scripts ({c.ad.Count} ad/analytics classes); SDK and kit folders skipped");
+
+            // Scripts a v1.33 package must have (v1.32 doesn't have them, so they're only listed there).
+            var v133 = (c.s.requiredScriptsV133 ?? new string[0]).Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+            if (v133.Count == 0) return;
+            var missing133 = v133.Where(e => c.model.Class(e.Split('|')) == null).Select(e => e.Split('|')[0]).ToList();
+            if (c.pkg.V133)
+                sec.Add("Required scripts (v1.33)", missing133.Count == 0 ? CheckStatus.Pass : CheckStatus.Fail,
+                    missing133.Count == 0 ? v133.Count + " found" : "Missing: " + string.Join(", ", missing133),
+                    missing133.Count == 0 ? "Every script GenZ Ads v1.33 adds is there"
+                                          : "These come with GenZ Ads v1.33: copy them from the release (the package's other scripts call them)");
+            else
+                sec.Add("Required scripts (v1.33)", CheckStatus.Info, "v1.32 package",
+                    $"Not required for v1.32 (they come with v1.33: {string.Join(", ", v133.Select(e => e.Split('|')[0]))})");
         }
 
         // ================================================================= waterfall
@@ -1233,7 +1315,7 @@ namespace GenZ.TestSuit
                 int callLine = b.File.LineOf(b.bodyStart + call.Index);
                 if (!set.Success || set.Index > call.Index)
                 {
-                    sec.Add($"{b.FullName}: sets {flagName} before the purchase", CheckStatus.Warn, set.Success ? "after the call" : "not set",
+                    sec.Add($"{b.FullName}: sets {flagName} before the purchase", NewIn133(c), set.Success ? "after the call" : "not set",
                         $"Set {flagName} = true before {call.Groups[1].Value}(): otherwise an App Open ad shows when the player returns from the store dialog (GenZ Ads v1.33)",
                         b.File.path, callLine);
                     continue;
@@ -1261,7 +1343,7 @@ namespace GenZ.TestSuit
                     var h = handlers.FirstOrDefault(m => c.model.Reaches(m, clearRx, scope, 3, out where)) ?? handlers[0];
                     if (where == null)
                     {
-                        sec.Add($"{h.FullName}: clears {flagName}", CheckStatus.Warn, "not cleared",
+                        sec.Add($"{h.FullName}: clears {flagName}", NewIn133(c), "not cleared",
                             $"When a purchase {label}, {flagName} stays true if the store dialog didn't send the game to background (it's an overlay, so it often doesn't): "
                             + $"the next real App Open ad is skipped. Set {flagName} = false a moment after the purchase ends (GenZ Ads v1.33)",
                             h.File.path, h.Line);
@@ -1315,7 +1397,7 @@ namespace GenZ.TestSuit
                 var after = code.Substring(launch.Index);
                 var clearAfter = clears.Match(after);
                 if (!clearAfter.Success)
-                    sec.Add($"{r.FullName}: clears {flagName} after the review", CheckStatus.Warn, "not cleared",
+                    sec.Add($"{r.FullName}: clears {flagName} after the review", NewIn133(c), "not cleared",
                         $"{flagName} stays true after the review: the card is an overlay (and Google's quota often shows none), so the game may not go to background and "
                         + $"the next real App Open ad is skipped. Set {flagName} = false a moment after LaunchReviewFlow ends (GenZ Ads v1.33)",
                         r.File.path, launchLine);
@@ -1346,7 +1428,7 @@ namespace GenZ.TestSuit
                     if (!clears.IsMatch(code.Substring(start, x.Index - start))) stuck.Add(r.File.LineOf(r.bodyStart + x.Index));
                 }
                 if (stuck.Count > 0)
-                    sec.Add($"{r.FullName}: clears {flagName} on early exits", CheckStatus.Warn, $"{stuck.Count} exit(s)",
+                    sec.Add($"{r.FullName}: clears {flagName} on early exits", NewIn133(c), $"{stuck.Count} exit(s)",
                         $"Exits (yield break / return) at line {string.Join(", ", stuck)} leave {flagName} true, e.g. when the review request fails: "
                         + "the next real App Open ad is skipped. Clear it before exiting",
                         r.File.path, stuck[0]);
@@ -1356,6 +1438,208 @@ namespace GenZ.TestSuit
         }
 
         static Regex SourceRef(string name) => new Regex(@"\b" + Regex.Escape(name) + @"\b");
+
+        /// <summary>Status for a missing feature GenZ Ads added in v1.33: required (Fail) from a v1.33 project, only reported for v1.32.</summary>
+        static CheckStatus NewIn133(Ctx c) => c.pkg != null && c.pkg.V133 ? CheckStatus.Fail : CheckStatus.Info;
+
+        // ================================================================= platform-only code
+
+        // Defines of a player build (not the Editor). Version defines (UNITY_2022_3_OR_NEWER…) count as set.
+        internal static readonly HashSet<string> AndroidDefines = new HashSet<string> { "UNITY_ANDROID", "PLATFORM_ANDROID" };
+        internal static readonly HashSet<string> IosDefines = new HashSet<string> { "UNITY_IOS", "UNITY_IPHONE", "PLATFORM_IOS" };
+
+        // Code that only one platform can compile (an iOS-only package such as com.unity.ads.ios-support, or Play Review on
+        // Android) must sit inside #if UNITY_IOS / #if UNITY_ANDROID. Otherwise the other platform's build stops with a
+        // compile error, even though the Editor compiles fine. Scripts under an .asmdef are skipped (the asmdef picks platforms).
+        static void CheckPlatformCode(ReportSection sec, Ctx c)
+        {
+            var rules = new List<(string platform, Regex rx)>();
+            foreach (var entry in c.s.platformOnlyApis ?? new string[0])
+            {
+                var bar = entry?.IndexOf('|') ?? -1;
+                if (bar <= 0) continue;
+                try { rules.Add((entry.Substring(0, bar).Trim(), new Regex(entry.Substring(bar + 1)))); }
+                catch (ArgumentException e) { sec.Add("Platform-only API pattern", CheckStatus.Warn, entry, "Not a valid regex: " + e.Message); }
+            }
+            if (rules.Count == 0) { sec.Add("Platform-only code", CheckStatus.Info, "", "No patterns in codeChecks.platformOnlyApis"); return; }
+
+            var asmdefDirs = new Dictionary<string, bool>(StringComparer.OrdinalIgnoreCase);
+            bool UnderAsmdef(string path)
+            {
+                for (var dir = System.IO.Path.GetDirectoryName(path)?.Replace('\\', '/'); !string.IsNullOrEmpty(dir) && dir.StartsWith("Assets", StringComparison.OrdinalIgnoreCase);
+                     dir = System.IO.Path.GetDirectoryName(dir)?.Replace('\\', '/'))
+                {
+                    if (!asmdefDirs.TryGetValue(dir, out var has))
+                        asmdefDirs[dir] = has = System.IO.Directory.Exists(dir) && System.IO.Directory.GetFiles(dir, "*.asmdef").Length > 0;
+                    if (has) return true;
+                }
+                return false;
+            }
+
+            int problems = 0, scanned = 0;
+            foreach (var f in c.model.files)
+            {
+                if (UnderAsmdef(f.path)) continue;
+                scanned++;
+                var lines = f.masked.Replace("\r\n", "\n").Split('\n');
+                var inAndroid = CompiledLines(lines, AndroidDefines);
+                var inIos = CompiledLines(lines, IosDefines);
+                foreach (var (platform, rx) in rules)
+                {
+                    bool iosOnly = platform.Equals("iOS", StringComparison.OrdinalIgnoreCase);
+                    var other = iosOnly ? inAndroid : inIos;
+                    var hitLines = new List<int>();
+                    for (int i = 0; i < lines.Length; i++)
+                        if (other[i] && !lines[i].TrimStart().StartsWith("#") && rx.IsMatch(lines[i])) hitLines.Add(i + 1);
+                    if (hitLines.Count == 0) continue;
+                    problems++;
+                    string broken = iosOnly ? "Android" : "iOS", guard = iosOnly ? "#if UNITY_IOS" : "#if UNITY_ANDROID";
+                    // Fails for the build target's own build; for the other platform it's a warning (a per-platform project may never build it).
+                    bool targetBreaks = c.ios == null || c.ios.Value == !iosOnly;
+                    sec.Add($"{System.IO.Path.GetFileName(f.path)}: {platform}-only code", targetBreaks ? CheckStatus.Fail : CheckStatus.Warn, $"line {string.Join(", ", hitLines.Take(6))}",
+                        $"{platform}-only code ({Short(rx.Match(lines[hitLines[0] - 1]).Value, 40)}) is compiled in the {broken} build, which doesn't have it: the {broken} build "
+                        + $"stops with a compile error (the Editor still compiles). Put it inside {guard} … #endif, including its using line"
+                        + (targetBreaks ? "" : $". The build target is {(iosOnly ? "iOS" : "Android")}, so this only matters if this project is also built for {broken}"),
+                        f.path, hitLines[0]);
+                }
+            }
+            if (problems == 0)
+                sec.Add("Platform-only code guarded", CheckStatus.Pass, $"{scanned} scripts",
+                    "iOS-only code is inside #if UNITY_IOS and Android-only code inside #if UNITY_ANDROID, so both builds compile");
+        }
+
+        /// <summary>For each line: is it compiled with these defines (player build, not the Editor)?</summary>
+        internal static bool[] CompiledLines(string[] lines, HashSet<string> defines)
+        {
+            var result = new bool[lines.Length];
+            var stack = new Stack<(bool parent, bool taken, bool active)>();
+            bool active = true;
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var t = lines[i].Trim();
+                var m = Regex.Match(t, @"^#\s*(if|elif|else|endif)\b(.*)$");
+                if (m.Success)
+                {
+                    var kind = m.Groups[1].Value;
+                    var expr = m.Groups[2].Value;
+                    if (kind == "if")
+                    {
+                        bool v = active && EvalDefines(expr, defines);
+                        stack.Push((active, v, v));
+                        active = v;
+                    }
+                    else if (stack.Count > 0)
+                    {
+                        var top = stack.Pop();
+                        if (kind == "endif") active = top.parent;
+                        else
+                        {
+                            bool v = top.parent && !top.taken && (kind == "else" || EvalDefines(expr, defines));
+                            stack.Push((top.parent, top.taken || v, v));
+                            active = v;
+                        }
+                    }
+                    result[i] = false;
+                    continue;
+                }
+                result[i] = active;
+            }
+            return result;
+        }
+
+        // Preprocessor expression: symbols, true/false, !, &&, ||, ==, !=, parentheses. Unknown symbols are false,
+        // version defines (UNITY_2022_3_OR_NEWER…) true.
+        static bool EvalDefines(string expr, HashSet<string> defines)
+        {
+            var tokens = Regex.Matches(expr.Split(new[] { "//" }, StringSplitOptions.None)[0], @"\w+|&&|\|\||==|!=|!|\(|\)").Cast<Match>().Select(x => x.Value).ToList();
+            int pos = 0;
+            bool Or() { bool v = And(); while (pos < tokens.Count && tokens[pos] == "||") { pos++; bool r = And(); v = v || r; } return v; }
+            bool And() { bool v = Eq(); while (pos < tokens.Count && tokens[pos] == "&&") { pos++; bool r = Eq(); v = v && r; } return v; }
+            bool Eq()
+            {
+                bool v = Unary();
+                while (pos < tokens.Count && (tokens[pos] == "==" || tokens[pos] == "!="))
+                {
+                    bool eq = tokens[pos++] == "=="; bool r = Unary();
+                    v = eq ? v == r : v != r;
+                }
+                return v;
+            }
+            bool Unary()
+            {
+                if (pos >= tokens.Count) return false;
+                var tok = tokens[pos++];
+                if (tok == "!") return !Unary();
+                if (tok == "(") { bool v = Or(); if (pos < tokens.Count && tokens[pos] == ")") pos++; return v; }
+                if (tok == "true") return true;
+                if (tok == "false") return false;
+                return defines.Contains(tok) || Regex.IsMatch(tok, @"^UNITY_\d+(_\d+)*_OR_NEWER$");
+            }
+            return tokens.Count > 0 && Or();
+        }
+
+        // ================================================================= startup order (consent, ATT, Remote Config)
+
+        static readonly Regex FetchWait = new Regex(@"\bisFetchCompleted\b|\bOnRemoteDataFetch\b");
+        static readonly Regex FetchDoneTrue = new Regex(@"\bNotifyRemoteDataFetch\s*\(\s*true\b");
+        static readonly Regex FetchDoneFalse = new Regex(@"\bNotifyRemoteDataFetch\s*\(\s*false\b");
+        static readonly Regex AttPrompt = new Regex(@"\bRequestAuthorizationTracking\s*\(");
+        static readonly Regex UmpUpdate = new Regex(@"\bConsentInformation\s*\.\s*Update\s*\(");
+        static readonly Regex AttAware = new Regex(@"\bAttPending\b|\bGetAuthorizationTrackingStatus\b|\bATTrackingStatusBinding\b");
+
+        // GenZ Ads v1.33 startup: a first-scene screen (ConsentManager) waits for the Remote Config fetch, so FirebaseManager /
+        // RemoteConfigManager must report both outcomes; on iOS, Apple's tracking prompt comes before Google's UMP form.
+        // A game without these (v1.32) only gets Info rows.
+        static void CheckStartupOrder(ReportSection sec, Ctx c)
+        {
+            // 1. Something waits for the fetch → it must hear about success and failure.
+            var waiters = c.model.Methods.Where(m => FetchWait.IsMatch(m.Code) && !Regex.IsMatch(m.Code, @"\bNotifyRemoteDataFetch\b")
+                                                      && !Regex.IsMatch(m.owner.Body, @"\bstatic\s+event\b[^;]*\bOnRemoteDataFetch\b")).ToList();
+            // v1.33 requires these (its ConsentManager waits for the fetch); a v1.32 project only gets them when it waits too.
+            var missingStatus = c.pkg != null && c.pkg.V133 ? CheckStatus.Fail : CheckStatus.Warn;
+            if (waiters.Count == 0)
+                sec.Add("Remote Config fetch reported", c.pkg != null && c.pkg.V133 ? CheckStatus.Warn : CheckStatus.Info, "no waiting screen",
+                    c.pkg != null && c.pkg.V133
+                        ? "GenZ Ads v1.33, but nothing waits for the Remote Config fetch (FirebaseManager.isFetchCompleted / OnRemoteDataFetch): ConsentManager isn't used, so ads may start with default values"
+                        : "Nothing waits for the Remote Config fetch (FirebaseManager.isFetchCompleted / OnRemoteDataFetch; new in v1.33): not checked");
+            else
+            {
+                var w = waiters[0];
+                var ok = c.model.Methods.FirstOrDefault(m => FetchDoneTrue.IsMatch(m.Code));
+                var fail = c.model.Methods.FirstOrDefault(m => FetchDoneFalse.IsMatch(m.Code));
+                sec.Add("Remote Config fetch reported (success)", ok != null ? CheckStatus.Pass : missingStatus,
+                    ok != null ? ok.FullName : "never",
+                    ok != null ? $"{w.FullName} waits for the fetch; {ok.FullName} reports a successful fetch"
+                               : $"{w.FullName} waits for the fetch, but nothing calls NotifyRemoteDataFetch(true): the screen always waits the full timeout. "
+                                 + "Call it after the fetched values are loaded (e.g. at the end of RemoteConfigManager.LoadValues)",
+                    (ok ?? w).File.path, (ok ?? w).Line);
+                sec.Add("Remote Config fetch reported (failure)", fail != null ? CheckStatus.Pass : missingStatus,
+                    fail != null ? fail.FullName : "never",
+                    fail != null ? $"{fail.FullName} reports a failed fetch, so offline players don't wait the full timeout"
+                                 : "Nothing calls NotifyRemoteDataFetch(false): when the fetch fails (offline, Firebase unavailable) the screen waits the full timeout",
+                    (fail ?? w).File.path, (fail ?? w).Line);
+            }
+
+            // 2. iOS: when the game asks for tracking permission, Google's UMP form must wait for that answer.
+            var att = c.model.Methods.FirstOrDefault(m => AttPrompt.IsMatch(m.Code));
+            var ump = c.model.Methods.Where(m => UmpUpdate.IsMatch(m.Code)).ToList();
+            if (att == null)
+                sec.Add("iOS: tracking prompt before UMP", CheckStatus.Info, "no tracking prompt",
+                    "No code asks for Apple's tracking permission (RequestAuthorizationTracking): not checked");
+            else if (ump.Count == 0)
+                sec.Add("iOS: tracking prompt before UMP", CheckStatus.Info, "no UMP", $"{att.FullName} shows the tracking prompt; no UMP ConsentInformation.Update call found");
+            else
+                foreach (var u in ump)
+                {
+                    bool waits = AttAware.IsMatch(u.owner.Body);
+                    sec.Add($"iOS: {u.owner.name} waits for the tracking prompt", waits ? CheckStatus.Pass : missingStatus,
+                        waits ? "waits" : "doesn't wait",
+                        waits ? $"{u.owner.name} checks the tracking answer ({att.FullName} asks) before Google's consent form"
+                              : $"{att.FullName} asks for Apple's tracking permission, but {u.FullName} starts Google's consent form without waiting for the answer: "
+                                + "on iOS both can open at once. Wait until the tracking prompt is answered (e.g. ConsentManager.AttPending)",
+                        u.File.path, u.Line);
+                }
+        }
 
         // ================================================================= other logic
 

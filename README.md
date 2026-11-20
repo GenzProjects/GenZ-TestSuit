@@ -13,13 +13,13 @@ The repo is private: git on your machine must be signed in to a GitHub account w
 **Window → Package Manager → + → Add package from git URL…**
 
 ```
-https://github.com/GenzProjects/GenZ-TestSuit.git#v1.0.0
+https://github.com/GenzProjects/GenZ-TestSuit.git#v1.0.1
 ```
 
 or in `Packages/manifest.json`:
 
 ```json
-"com.genz.testsuit": "https://github.com/GenzProjects/GenZ-TestSuit.git#v1.0.0"
+"com.genz.testsuit": "https://github.com/GenzProjects/GenZ-TestSuit.git#v1.0.1"
 ```
 
 The tag above is the latest release. Keep the `#v…` tag so every game gets the same release. To update, change the tag. Every release and its changes are under [Releases](https://github.com/GenzProjects/GenZ-TestSuit/releases/latest).

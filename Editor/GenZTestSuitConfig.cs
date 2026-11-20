@@ -1,6 +1,7 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEditor;
 using UnityEngine;
 
@@ -9,7 +10,7 @@ namespace GenZ.TestSuit
     /// <summary>The tool's release name, shown in the window and the copied report. Raise it with each release.</summary>
     public static class GenZTestSuitInfo
     {
-        public const string Version = "1.0";
+        public const string Version = "1.0.1";
         public const string Name = "GenZ-TestSuit-v" + Version;
 
         /// <summary>
@@ -56,6 +57,8 @@ namespace GenZ.TestSuit
             "AdMob|Admob", "AdsIds", "AdsManager", "Analytics", "AppmetricaAnalytics", "AppOpen_Code",
             "FirebaseManager", "GA_Aanalytics", "InAppCalling", "InAppReviewManager", "UmpManager", "unityInApp", "AdsGapTimer"
         };
+        [Tooltip("Scripts a GenZ Ads v1.33 (or newer) project must also have. A v1.32 project doesn't need them.")]
+        public string[] requiredScriptsV133 = { "RemoteConfigManager", "GenZLog", "ConsentManager" };
         [Tooltip("Interstitial cooldown timer class.")]
         public string gapTimerClass = "AdsGapTimer";
         [Tooltip("Methods that restart the cooldown.")]
@@ -88,6 +91,13 @@ namespace GenZ.TestSuit
         [Tooltip("Flag that makes the App Open ad skip one return to the game. Purchases (PurchaseProduct / InitiatePurchase) and the "
                  + "in-app review (LaunchReviewFlow) must set it, and clear it again after their flow ends. Empty = isPausedDuetoAd.")]
         public string[] appOpenSkipFlags = { "isPausedDuetoAd" };
+        [Tooltip("Code only one platform can compile: '<iOS|Android>|<regex>'. A match outside #if UNITY_IOS (or #if UNITY_ANDROID) breaks "
+                 + "the other platform's build. Scripts in a folder with an .asmdef are skipped: their asmdef picks the platforms.")]
+        public string[] platformOnlyApis =
+        {
+            @"iOS|\bUnity\.Advertisement\.IosSupport\b|\bATTrackingStatusBinding\b|\bSkAdNetworkBinding\b",
+            @"Android|\bGoogle\.Play\.(Review|Core|Common|AppUpdate)\b|\bReviewManager\b|\bPlayReviewInfo\b|\bReviewErrorCode\b",
+        };
     }
 
     /// <summary>Step 3: Taichi 1.0 (revenue threshold → custom_ad_impression) and 2.0 (impression count → count_ad_impression).</summary>
@@ -138,37 +148,40 @@ namespace GenZ.TestSuit
         [Tooltip("GameAnalytics ad revenue format strings '<Format>|<string>', used only when GAMaxIntegration.cs can't be read. "
                  + "Normally GAAdMobIntegration.cs is compared with the strings GAMaxIntegration.cs sends.")]
         public string[] gaAdFormatFallback = { "Interstitial|INTER", "Rewarded|REWARDED", "Banner|BANNER", "App Open|APP_OPEN" };
-        [Tooltip("AppLovin MAX adapters every game must have: '<Network>|<group:artifact>' (Android Maven package, version ignored). "
-                 + "A missing one fails. Custom networks (AdSurge, Helix) come from their own *Dependencies.xml, not the Integration Manager.")]
+        [Tooltip("AppLovin MAX adapters every game must have: '<Network>|<Android group:artifact>|<iOS pod>' (version ignored). "
+                 + "Android builds check the Maven package, iOS builds the CocoaPods pod (empty = not checked on iOS). A missing one fails. "
+                 + "Custom networks (AdSurge, Helix) come from their own *Dependencies.xml, not the Integration Manager.")]
         public string[] maxAdapters =
         {
-            "BidMachine|com.applovin.mediation:bidmachine-adapter",
-            "Bigo Ads|com.applovin.mediation:bigoads-adapter",
-            "Pangle (ByteDance)|com.applovin.mediation:bytedance-adapter",
-            "Meta Audience Network (Facebook)|com.applovin.mediation:facebook-adapter",
-            "DT Exchange (Fyber)|com.applovin.mediation:fyber-adapter",
-            "Google AdMob|com.applovin.mediation:google-adapter",
-            "Google Ad Manager|com.applovin.mediation:google-ad-manager-adapter",
-            "InMobi|com.applovin.mediation:inmobi-adapter",
-            "Mintegral|com.applovin.mediation:mintegral-adapter",
-            "Smaato|com.applovin.mediation:smaato-adapter",
-            "Unity Ads|com.applovin.mediation:unityads-adapter",
-            "Liftoff Monetize (Vungle)|com.applovin.mediation:vungle-adapter",
-            "Yandex|com.applovin.mediation:yandex-adapter",
-            "YSO Network|com.applovin.mediation:yso-network-adapter",
-            "AdSurge (custom network)|com.adsurge.sdk:adapter-for-max",
-            "Helix / Voodoo ADN (custom network)|io.adn:adn-applovin-adapter",
+            "BidMachine|com.applovin.mediation:bidmachine-adapter|AppLovinMediationBidMachineAdapter",
+            "Bigo Ads|com.applovin.mediation:bigoads-adapter|AppLovinMediationBigoAdsAdapter",
+            "Pangle (ByteDance)|com.applovin.mediation:bytedance-adapter|AppLovinMediationByteDanceAdapter",
+            "Meta Audience Network (Facebook)|com.applovin.mediation:facebook-adapter|AppLovinMediationFacebookAdapter",
+            "DT Exchange (Fyber)|com.applovin.mediation:fyber-adapter|AppLovinMediationFyberAdapter",
+            "Google AdMob|com.applovin.mediation:google-adapter|AppLovinMediationGoogleAdapter",
+            "Google Ad Manager|com.applovin.mediation:google-ad-manager-adapter|AppLovinMediationGoogleAdManagerAdapter",
+            "InMobi|com.applovin.mediation:inmobi-adapter|AppLovinMediationInMobiAdapter",
+            "Mintegral|com.applovin.mediation:mintegral-adapter|AppLovinMediationMintegralAdapter",
+            "Smaato|com.applovin.mediation:smaato-adapter|AppLovinMediationSmaatoAdapter",
+            "Unity Ads|com.applovin.mediation:unityads-adapter|AppLovinMediationUnityAdsAdapter",
+            "Liftoff Monetize (Vungle)|com.applovin.mediation:vungle-adapter|AppLovinMediationVungleAdapter",
+            "Yandex|com.applovin.mediation:yandex-adapter|AppLovinMediationYandexAdapter",
+            "YSO Network|com.applovin.mediation:yso-network-adapter|AppLovinMediationYSONetworkAdapter",
+            "AdSurge (custom network)|com.adsurge.sdk:adapter-for-max|",
+            "Helix / Voodoo ADN (custom network)|io.adn:adn-applovin-adapter|",
         };
-        [Tooltip("Networks that must not be in the build: '<Network>|<group:artifact>', or '<Network>|<group>:' for any package of that group. "
-                 + "Also fails when a MaxSdk/Mediation/<Network> folder is still there.")]
+        [Tooltip("Networks that must not be in the build: '<Network>|<Android group:artifact>|<iOS pod>'. An Android entry ending in ':' "
+                 + "matches any package of that group. Also fails when a MaxSdk/Mediation/<Network> folder is still there.")]
         public string[] forbiddenAdapters =
         {
-            "IronSource|com.applovin.mediation:ironsource-adapter",
-            "IronSource SDK|com.ironsource.sdk:",
-            "IronSource / LevelPlay SDK|com.unity3d.ads-mediation:",
+            "IronSource|com.applovin.mediation:ironsource-adapter|AppLovinMediationIronSourceAdapter",
+            "IronSource SDK|com.ironsource.sdk:|IronSourceSDK",
+            "IronSource / LevelPlay SDK|com.unity3d.ads-mediation:|",
         };
-        [Tooltip("Regex on '<group>:<artifact>' for what counts as an ad network adapter. One that isn't in Max Adapters or Forbidden Adapters is a warning.")]
+        [Tooltip("Regex on '<group>:<artifact>' for what counts as an Android ad network adapter. One that isn't in Max Adapters or Forbidden Adapters is a warning.")]
         public string adapterPattern = @"^com\.applovin\.mediation:[\w.-]+-adapter$|adapter-for-max|applovin-adapter|max-adapter";
+        [Tooltip("Regex on the iOS pod name for what counts as an iOS ad network adapter. One that isn't in Max Adapters or Forbidden Adapters is a warning.")]
+        public string iosAdapterPattern = @"^AppLovinMediation\w+Adapter$|ApplovinAdapter|MaxAdapter";
     }
 
     /// <summary>Step 2: the Android Player Settings the studio's release builds must have.</summary>
@@ -371,6 +384,52 @@ namespace GenZ.TestSuit
         };
     }
 
+    /// <summary>
+    /// Step 1: the privacy policy and More Games links the game opens, against its store account in the sheet
+    /// (games tab "Store Name" → tab "Stors": "Privicy Policy" and "Link").
+    /// </summary>
+    [Serializable]
+    public class StoreLinkSettings
+    {
+        public bool enabled = true;
+        [Tooltip("Games-tab columns naming the game's live store account (Play Console developer). Also the store column of the stores table.")]
+        public string[] storeColumns = { "Store Name", "Store" };
+        [Tooltip("The games tab has two \"Store Name\" columns: C (older) and U (the current live store, added 2026-11-20). "
+                 + "On = the last non-empty one is used, and an empty last one falls back to the earlier with a warning. Off = the first.")]
+        public bool useLastStoreColumn = true;
+        [Tooltip("Stores-table columns holding the privacy policy URL; the first one the table has is used. \"Privicy Policy New\" is left out "
+                 + "on purpose: the studio sheet marks it as not confirmed yet.")]
+        public string[] privacyColumns = { "Privicy Policy", "Privacy Policy", "Privacy Policy URL" };
+        [Tooltip("Stores-table columns holding the store's developer page (the More Games link).")]
+        public string[] moreGamesColumns = { "Link", "Store Link", "More Games", "More Games Link" };
+        [Tooltip("Regex (case ignored): a button / UnityEvent calling a method with this in its name and a text argument is a privacy policy link.")]
+        public string privacyMethodPattern = "privacy|policy";
+        [Tooltip("Regex (case ignored): a web address with this in it (button text argument or a string in the game's scripts) is a privacy policy link.")]
+        public string privacyUrlPattern = "privacy|privicy|policy";
+        [Tooltip("Regex (case ignored): a button / UnityEvent calling a method with this in its name and a text argument is a More Games link.")]
+        public string moreGamesMethodPattern = @"more_?games?|other_?games|developer|publisher";
+        [Tooltip("Regex (case ignored): an address like this (button text argument or a string in the game's scripts) is a More Games link: "
+                 + "a Play or App Store developer page.")]
+        public string moreGamesUrlPattern = @"play\.google\.com/store/apps/dev|market://(dev\?|search\?q=pub:)|apps\.apple\.com/.*developer/|itms-apps://.*developer";
+        [Tooltip("Games-tab columns holding the iOS app's App Store ID (the number in apps.apple.com/app/id<number>). The iOS Rate Us link must open it.")]
+        public string[] appStoreIdColumns = { "App ID", "Apple ID", "App Store ID" };
+        [Tooltip("Regex (case ignored): a button / UnityEvent calling a method with this in its name and a text argument is a Rate Us link.")]
+        public string rateUsMethodPattern = @"rate_?(us|app|game|now|it)|^rate|review|store_?page";
+        [Tooltip("Regex (case ignored): an address like this is a Rate Us link: the game's own store page (Play details?id= / market://details, "
+                 + "App Store app/id…). Checked after the More Games pattern, so a developer page never counts as Rate Us.")]
+        public string rateUsUrlPattern = @"play\.google\.com/store/apps/details|market://details|apps\.apple\.com/.*\bid\d|itunes\.apple\.com/.*\bid\d|itms-apps?s?://.*\bid\d";
+        [Tooltip("Regex (case ignored): a text field (a script's Inspector field, e.g. privacyPolicyUrl / moreGamesLink) whose name matches the "
+                 + "privacy or More Games method pattern AND this one holds such a link, even when its text is empty or not recognised.")]
+        public string linkFieldPattern = "url|link";
+        [Tooltip("Folders skipped by the link scan (SDKs, plugins' demos, this suite). Everything else under Assets is read: "
+                 + "scenes, prefabs, ScriptableObject assets and scripts.")]
+        public string[] excludeFolders =
+        {
+            "GoogleMobileAds", "MaxSdk", "Firebase", "GameAnalytics", "Adjust", "AppMetrica", "ExternalDependencyManager",
+            "Dreamteck", "Demigiant", "NiceVibrations", "TextMesh Pro", "GenZ-TestSuit", "GenZ-DeepTest"
+        };
+    }
+
     /// <summary>A tab of the IDs spreadsheet to read. Matched by name; the gid is only used when the tab list can't be read.</summary>
     [Serializable]
     public class SheetTab
@@ -378,8 +437,11 @@ namespace GenZ.TestSuit
         public string name;
         [Tooltip("The tab's gid (the number after #gid= in its link). Optional: used only when the tab names can't be read.")]
         public string gid;
+        [Tooltip("Read only for a value found by pattern (the shared MAX SDK key, cell B1 of the Android MAX tab): its rows are never "
+                 + "used as the game's IDs. iOS games use the same AppLovin account, and the iOS tabs have no SDK key.")]
+        public bool keyOnly;
 
-        public SheetTab(string name, string gid) { this.name = name; this.gid = gid; }
+        public SheetTab(string name, string gid, bool keyOnly = false) { this.name = name; this.gid = gid; this.keyOnly = keyOnly; }
     }
 
     /// <summary>Where a rule's component or asset is looked up.</summary>
@@ -409,6 +471,10 @@ namespace GenZ.TestSuit
         public string platformName = "";
         [Tooltip("'<Rule label>/<Field label>' of another field that must hold the same value, e.g. 'Google Mobile Ads Settings/Android App ID'.")]
         public string sameAs = "";
+        [Tooltip("iOS build target: field names to read instead of fieldNames (e.g. adMobIOSAppId). Empty = fieldNames on both platforms.")]
+        public string[] iosFieldNames = new string[0];
+        [Tooltip("iOS build target: the platform to pick from platformListField instead of platformName ('|' between accepted names, e.g. 'IPhonePlayer|iOS').")]
+        public string iosPlatformName = "";
 
         public FieldRule(string label, FieldKind kind, string[] fieldNames, string[] sheetColumns = null, bool required = true)
         {
@@ -422,6 +488,24 @@ namespace GenZ.TestSuit
         public FieldRule Expect(string value) { expectedValue = value; return this; }
         public FieldRule ForPlatform(string listField, string platform) { platformListField = listField; platformName = platform; return this; }
         public FieldRule SameAs(string otherKey) { sameAs = otherKey; return this; }
+        public FieldRule OnIos(string[] fields = null, string platform = null)
+        {
+            if (fields != null) iosFieldNames = fields;
+            if (platform != null) iosPlatformName = platform;
+            return this;
+        }
+
+        /// <summary>This rule as checked for the build target: on iOS, the iOS field names / platform, and "Android" → "iOS" in labels.</summary>
+        public FieldRule For(bool ios)
+        {
+            if (!ios) return this;
+            var c = (FieldRule)MemberwiseClone();
+            if (iosFieldNames != null && iosFieldNames.Length > 0) c.fieldNames = iosFieldNames;
+            if (!string.IsNullOrEmpty(iosPlatformName)) c.platformName = iosPlatformName;
+            c.label = (label ?? "").Replace("Android", "iOS");
+            c.sameAs = (sameAs ?? "").Replace("Android", "iOS");
+            return c;
+        }
     }
 
     [Serializable]
@@ -462,6 +546,16 @@ namespace GenZ.TestSuit
             new ScriptRule(label, typeNames, fields) { target = RuleTarget.Asset, assetNames = assetNames, assetFolder = assetFolder };
 
         public ScriptRule Active() { mustBeActive = true; return this; }
+
+        /// <summary>This rule as checked for the build target (see <see cref="FieldRule.For"/>).</summary>
+        public ScriptRule For(bool ios)
+        {
+            if (!ios) return this;
+            var c = (ScriptRule)MemberwiseClone();
+            c.label = (label ?? "").Replace("Android", "iOS");
+            c.fields = (fields ?? new List<FieldRule>()).Select(f => f.For(true)).ToList();
+            return c;
+        }
         public ScriptRule Prefab() { expectPrefab = true; return this; }
     }
 
@@ -473,8 +567,8 @@ namespace GenZ.TestSuit
     {
         /// <summary>
         /// Studio IDs spreadsheet. Android: tab "Android Games ID's" (AdMob, Adjust, GameAnalytics, AppMetrica, Taichi 2.0;
-        /// one row per game) and tab "Android Max ID's" (MAX unit IDs per game; the shared MAX SDK key in B1).
-        /// The iOS tabs aren't read.
+        /// one row per game) and tab "Android Max ID's" (MAX unit IDs per game; the shared MAX SDK key in B1), plus tab
+        /// "Stors" (each store account's developer page and privacy policy URL). The iOS tabs aren't read.
         /// </summary>
         public const string DefaultSheetUrl = "https://docs.google.com/spreadsheets/d/1nd87c3FFAHqOhtNIN2ZqVyXlNlSfsQJo2YjL1wh9UMk/edit?gid=0#gid=0";
         /// <summary>The studio sheet before 2026-10-23 (both tables on one tab). A config still pointing at it is moved to the new one.</summary>
@@ -484,10 +578,21 @@ namespace GenZ.TestSuit
         {
             new SheetTab("Android Games ID's", "0"),
             new SheetTab("Android Max ID's", "1078150226"),
+            StoresTab(),
         };
+        /// <summary>iOS build target: the iOS tabs, the stores tab, and the Android MAX tab for the shared MAX SDK key only.</summary>
+        public static List<SheetTab> DefaultIosSheetTabs() => new List<SheetTab>
+        {
+            new SheetTab("IOS Games ID's", "223612715"),
+            new SheetTab("IOS MAX Ids", "1122691852"),
+            StoresTab(),
+            new SheetTab("Android Max ID's", "1078150226", keyOnly: true),
+        };
+        /// <summary>Store account → developer page and privacy policy URL ("Store Name | Link | Privicy Policy | …").</summary>
+        static SheetTab StoresTab() => new SheetTab("Stors", "405200962");
         public const string DefaultAdsObjectName = "ADs";
         /// <summary>Bump when defaults change; older config assets are upgraded on load (rules reset, scene kept).</summary>
-        const int CurrentVersion = 10;
+        const int CurrentVersion = 12;
 
         // Must default to 0: assets saved before this field existed deserialize with the initializer value.
         [HideInInspector] public int configVersion;
@@ -503,6 +608,8 @@ namespace GenZ.TestSuit
         public string googleSheetUrl = DefaultSheetUrl;
         [Tooltip("Tabs to read, by name (case, spaces and symbols ignored). Their tables are combined. A tab the spreadsheet doesn't have is skipped; none found (or empty list) = the tab in the link.")]
         public List<SheetTab> sheetTabs = DefaultSheetTabs();
+        [Tooltip("The tabs read when the build target is iOS (the iOS apps' IDs). Same rules as Sheet Tabs.")]
+        public List<SheetTab> iosSheetTabs = DefaultIosSheetTabs();
         public bool verifyAgainstSheet = true;
         [Tooltip("Sheet headers that identify the package name column.")]
         public string[] packageColumnNames = { "Package Name", "Package", "Bundle ID", "Bundle Identifier", "Application ID" };
@@ -514,12 +621,17 @@ namespace GenZ.TestSuit
         public AndroidPlayerRules playerSettings = new AndroidPlayerRules();
         public SigningSettings signing = new SigningSettings();
         public TaichiSettings taichi = new TaichiSettings();
+        public StoreLinkSettings storeLinks = new StoreLinkSettings();
         public CodeCheckSettings codeChecks = new CodeCheckSettings();
         public ApkSettings apk = new ApkSettings();
         public DeepTestSettings deepTest = new DeepTestSettings();
 
         [Header("Rules")]
         public List<ScriptRule> rules = DefaultRules();
+
+        /// <summary>The sheet tabs for the build target: iOS games have their own tabs.</summary>
+        public List<SheetTab> SheetTabsFor(bool ios) => ios ? iosSheetTabs : sheetTabs;
+        public static bool IosTarget => EditorUserBuildSettings.activeBuildTarget == BuildTarget.iOS;
 
         public string EffectiveSheetUrl => string.IsNullOrWhiteSpace(googleSheetUrl) ? DefaultSheetUrl : googleSheetUrl.Trim();
 
@@ -605,15 +717,15 @@ namespace GenZ.TestSuit
                 // ---- Settings assets
                 ScriptRule.Asset("GameAnalytics Settings", new[] { "Settings" }, new[] { "Settings" }, "Resources/GameAnalytics",
                     new FieldRule("Game Key (Android)", FieldKind.GameAnalyticsGameKey,
-                        new[] { "gameKey" }, new[] { "GA Game Key", "GameAnalytics Game Key" }).ForPlatform("Platforms", "Android"),
+                        new[] { "gameKey" }, new[] { "GA Game Key", "GameAnalytics Game Key" }).ForPlatform("Platforms", "Android").OnIos(platform: "IPhonePlayer|iOS"),
                     new FieldRule("Secret Key (Android)", FieldKind.GameAnalyticsSecretKey,
-                        new[] { "secretKey" }, new[] { "GA Secret Key", "GameAnalytics Secret Key" }).ForPlatform("Platforms", "Android"),
+                        new[] { "secretKey" }, new[] { "GA Secret Key", "GameAnalytics Secret Key" }).ForPlatform("Platforms", "Android").OnIos(platform: "IPhonePlayer|iOS"),
                     new FieldRule("Send Version is ON", FieldKind.MustBeTrue,
                         new[] { "UsePlayerSettingsBuildNumber" })),
 
                 ScriptRule.Asset("Google Mobile Ads Settings", new[] { "GoogleMobileAdsSettings" }, new[] { "GoogleMobileAdsSettings" }, "Resources",
                     new FieldRule("Android App ID", FieldKind.AdMobAppId,
-                        new[] { "adMobAndroidAppId" }, new[] { "Admob AppID", "AdMob App ID" }),
+                        new[] { "adMobAndroidAppId" }, new[] { "Admob AppID", "AdMob App ID" }).OnIos(new[] { "adMobIOSAppId" }),
                     new FieldRule("Optimize Initialization is ON", FieldKind.MustBeTrue,
                         new[] { "optimizeInitialization" }),
                     new FieldRule("Optimize Ad Loading is ON", FieldKind.MustBeTrue,
@@ -624,7 +736,7 @@ namespace GenZ.TestSuit
                         new[] { "sdkKey" }, new[] { "MAX SDK Key", "Applovin SDK Key", "SDK Key" })
                         .SameAs("AdsManager (AppLovin MAX)/MAX SDK Key"),
                     new FieldRule("AdMob Android App ID", FieldKind.AdMobAppId,
-                        new[] { "adMobAndroidAppId" }, new[] { "Admob AppID", "AdMob App ID" })
+                        new[] { "adMobAndroidAppId" }, new[] { "Admob AppID", "AdMob App ID" }).OnIos(new[] { "adMobIosAppId", "adMobIOSAppId" })
                         .SameAs("Google Mobile Ads Settings/Android App ID")),
             };
         }
@@ -642,6 +754,10 @@ namespace GenZ.TestSuit
             if (string.IsNullOrWhiteSpace(adsObjectName)) adsObjectName = DefaultAdsObjectName;
             if (string.IsNullOrWhiteSpace(googleSheetUrl) || googleSheetUrl.Trim() == OldDefaultSheetUrl) googleSheetUrl = DefaultSheetUrl;
             if (sheetTabs == null || sheetTabs.Count == 0) sheetTabs = DefaultSheetTabs();
+            if (iosSheetTabs == null || iosSheetTabs.Count == 0) iosSheetTabs = DefaultIosSheetTabs(); // v12
+            else if (!sheetTabs.Any(t => t != null && GenZSheetReader.Normalize(t.name) == GenZSheetReader.Normalize(StoresTab().name)))
+                sheetTabs.Add(StoresTab()); // v11: privacy policy and More Games links per store
+            storeLinks = new StoreLinkSettings();
             configVersion = CurrentVersion;
             EditorUtility.SetDirty(this);
             AssetDatabase.SaveAssets();

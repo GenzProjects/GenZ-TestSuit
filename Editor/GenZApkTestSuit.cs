@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -193,7 +193,7 @@ namespace GenZ.TestSuit
         public static GenZSheetReader LoadSheet(GenZTestSuitConfig cfg, out string error)
         {
             var reader = new GenZSheetReader();
-            error = reader.Download(cfg.EffectiveSheetUrl, cfg.sheetTabs) ? null : reader.error;
+            error = reader.Download(cfg.EffectiveSheetUrl, cfg.SheetTabsFor(GenZTestSuitConfig.IosTarget)) ? null : reader.error; // the Game list: iOS apps on iOS
             return error == null ? reader : null;
         }
 

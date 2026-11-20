@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -21,6 +21,8 @@ namespace GenZ.TestSuit
         public List<List<string>> grid;            // raw CSV cells
         public Dictionary<string, string> gameValues; // normalized header -> value, for the matched game
         public List<string> headers = new List<string>(); // original header texts (for the UI hint)
+        /// <summary>Every (header, value) of the matched game in sheet order, repeated headers included (the games tab has two "Store Name" columns).</summary>
+        public List<KeyValuePair<string, string>> allValues = new List<KeyValuePair<string, string>>();
 
         public static string ToCsvUrl(string url)
         {
@@ -44,6 +46,8 @@ namespace GenZ.TestSuit
         }
 
         public List<string> tabsUsed = new List<string>(); // the tabs read, for the UI ("Android Games ID's", …)
+        /// <summary>Tabs marked <see cref="SheetTab.keyOnly"/>: searched only by <see cref="FindUniqueCell"/> (iOS reads the shared MAX SDK key from the Android MAX tab).</summary>
+        public List<List<string>> keyGrid = new List<List<string>>();
 
         /// <summary>
         /// Blocking download with a cancelable progress bar. With <paramref name="tabs"/>, every listed tab of the
@@ -54,6 +58,7 @@ namespace GenZ.TestSuit
         public bool Download(string sheetUrl, IList<SheetTab> tabs = null)
         {
             tabsUsed.Clear();
+            keyGrid = new List<List<string>>();
             try
             {
                 var wanted = (tabs ?? new SheetTab[0]).Where(t => t != null && (!string.IsNullOrWhiteSpace(t.name) || !string.IsNullOrWhiteSpace(t.gid))).ToList();
@@ -63,6 +68,7 @@ namespace GenZ.TestSuit
                     var listed = ListTabs(id.Groups[1].Value); // name -> gid, or null if the tab list couldn't be read
                     if (error == "Sheet download canceled.") return false;
                     var parts = new List<List<List<string>>>();
+                    var keyParts = new List<List<List<string>>>();
                     foreach (var t in wanted)
                     {
                         string gid = null;
@@ -75,12 +81,13 @@ namespace GenZ.TestSuit
                         if (gid == null) continue;
                         var part = DownloadCsv($"https://docs.google.com/spreadsheets/d/{id.Groups[1].Value}/export?format=csv&gid={gid}", t.name);
                         if (part == null) return false;
-                        parts.Add(part);
-                        tabsUsed.Add(string.IsNullOrWhiteSpace(t.name) ? "gid " + gid : t.name.Trim());
+                        (t.keyOnly ? keyParts : parts).Add(part);
+                        tabsUsed.Add((string.IsNullOrWhiteSpace(t.name) ? "gid " + gid : t.name.Trim()) + (t.keyOnly ? " (SDK key only)" : ""));
                     }
                     if (parts.Count > 0)
                     {
                         grid = Stack(parts);
+                        keyGrid = Stack(keyParts);
                         return true;
                     }
                 }
@@ -170,6 +177,7 @@ namespace GenZ.TestSuit
             var pkgHeaders = new HashSet<string>(packageColumnNames.Select(Normalize));
             gameValues = new Dictionary<string, string>();
             headers.Clear();
+            allValues.Clear();
             int tables = 0;
 
             for (int r = 0; r < grid.Count; r++)
@@ -256,10 +264,17 @@ namespace GenZ.TestSuit
             return null;
         }
 
+        /// <summary>Every value under any of these column names, in sheet order (a header used twice gives two values).</summary>
+        public List<KeyValuePair<string, string>> LookupAll(string[] columnNames)
+        {
+            var wanted = new HashSet<string>((columnNames ?? new string[0]).Select(Normalize));
+            return allValues.Where(kv => wanted.Contains(Normalize(kv.Key))).ToList();
+        }
+
         /// <summary>The single distinct cell anywhere in the sheet matching the pattern (e.g. the shared MAX SDK key), else null.</summary>
         public string FindUniqueCell(Regex pattern)
         {
-            var hits = grid.SelectMany(row => row).Select(v => v.Trim()).Where(v => pattern.IsMatch(v)).Distinct().ToList();
+            var hits = grid.Concat(keyGrid ?? new List<List<string>>()).SelectMany(row => row).Select(v => v.Trim()).Where(v => pattern.IsMatch(v)).Distinct().ToList();
             return hits.Count == 1 ? hits[0] : null;
         }
 
@@ -275,6 +290,7 @@ namespace GenZ.TestSuit
         void Add(string header, string value)
         {
             var key = Normalize(header);
+            if (key.Length > 0) allValues.Add(new KeyValuePair<string, string>(header.Trim(), value.Trim()));
             if (key.Length == 0 || gameValues.ContainsKey(key)) return; // first table wins on shared headers (Game Name…)
             headers.Add(header.Trim());
             gameValues[key] = value.Trim();

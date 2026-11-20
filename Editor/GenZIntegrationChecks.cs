@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -19,6 +19,8 @@ namespace GenZ.TestSuit
         const string SectionBuild = "SDK · Android build setup";
         const string SectionGa = "SDK · GameAnalytics ad revenue formats (MAX = AdMob)";
         const string SectionAdapters = "SDK · AppLovin MAX adapters (mediation networks)";
+        const string SectionIos = "SDK · iOS build setup (App Tracking, SKAdNetwork)";
+        const string SectionDepsIos = "SDK · Installed (iOS dependencies)";
 
         const string PluginsAndroid = "Assets/Plugins/Android";
         const string FirebaseXml = PluginsAndroid + "/FirebaseApp.androidlib/res/values/google-services.xml";
@@ -29,19 +31,65 @@ namespace GenZ.TestSuit
 
         static readonly Regex SpecRegex = new Regex(@"<androidPackage\s+spec\s*=\s*""([^""]+)""");
 
-        public static void Run(TestReport report, string packageName, IntegrationSettings s)
+        /// <param name="ios">True when the build target is iOS: the Android-only files (google-services.json, Gradle, manifest)
+        /// are skipped and their iOS counterparts checked (GoogleService-Info.plist, CocoaPods adapters, App Tracking text,
+        /// SKAdNetwork files).</param>
+        public static void Run(TestReport report, string packageName, IntegrationSettings s, bool ios = false)
         {
             var projectSettings = Read("ProjectSettings/ProjectSettings.asset") ?? "";
-            CheckFirebase(report.Section(SectionFirebase, TestStage.Integration), packageName, s);
-            CheckDependencies(report.Section(SectionDeps, TestStage.Integration), s, projectSettings);
-            CheckMaxAdapters(report.Section(SectionAdapters, TestStage.Integration), s, projectSettings);
-            CheckBuildSetup(report.Section(SectionBuild, TestStage.Integration), projectSettings);
+            CheckFirebase(report.Section(SectionFirebase, TestStage.Integration), packageName, s, ios);
+            CheckDependencies(report.Section(ios ? SectionDepsIos : SectionDeps, TestStage.Integration), s, projectSettings, ios);
+            CheckMaxAdapters(report.Section(SectionAdapters, TestStage.Integration), s, projectSettings, ios);
+            if (ios)
+                CheckIosBuild(report.Section(SectionIos, TestStage.Integration));
+            else
+                CheckBuildSetup(report.Section(SectionBuild, TestStage.Integration), projectSettings);
             CheckGaAdFormats(report, s, projectSettings);
         }
 
         // ================================================================= Firebase
 
-        static void CheckFirebase(ReportSection sec, string pkg, IntegrationSettings s)
+        static void CheckFirebase(ReportSection sec, string pkg, IntegrationSettings s, bool ios)
+        {
+            if (ios) CheckFirebaseIos(sec, pkg);
+            else CheckFirebaseAndroid(sec, pkg);
+            CheckFirebaseModules(sec, s);
+        }
+
+        // iOS: GoogleService-Info.plist must exist and its BUNDLE_ID must be this game's iOS bundle identifier.
+        static void CheckFirebaseIos(ReportSection sec, string pkg)
+        {
+            var plists = Directory.GetFiles("Assets", "GoogleService-Info.plist", SearchOption.AllDirectories).Select(Norm).ToList();
+            if (plists.Count == 0)
+            {
+                sec.Add("GoogleService-Info.plist", CheckStatus.Fail, "",
+                    "Missing — download it from the Firebase console (Project settings → Your apps → iOS app) and put it in Assets");
+                return;
+            }
+            foreach (var p in plists)
+            {
+                var text = Read(p) ?? "";
+                var bundle = PlistString(text, "BUNDLE_ID");
+                var project = PlistString(text, "PROJECT_ID");
+                string label = plists.Count == 1 ? "GoogleService-Info.plist" : "GoogleService-Info.plist · " + p;
+                if (bundle.Length == 0)
+                    sec.Add(label, CheckStatus.Fail, p, "Not a valid Firebase iOS config (no BUNDLE_ID) — download it again from the Firebase console", p, 1);
+                else if (bundle == pkg)
+                    sec.Add(label, CheckStatus.Pass, pkg, $"Belongs to this game: Firebase project \"{project}\", iOS app {pkg}", p, LineOf(text, "BUNDLE_ID"));
+                else
+                    sec.Add(label, CheckStatus.Fail, bundle,
+                        $"Belongs to another app: BUNDLE_ID is {bundle}, this game's iOS bundle identifier is {pkg}. Download this game's GoogleService-Info.plist from the Firebase console",
+                        p, LineOf(text, "BUNDLE_ID"));
+            }
+            if (plists.Count > 1)
+                sec.Add("Only one GoogleService-Info.plist", CheckStatus.Warn, plists.Count + " copies",
+                    "Firebase may read any of them — keep only this game's file: " + string.Join(", ", plists));
+        }
+
+        static string PlistString(string plist, string key) =>
+            Regex.Match(plist, @"<key>\s*" + Regex.Escape(key) + @"\s*</key>\s*<string>([^<]*)</string>").Groups[1].Value.Trim();
+
+        static void CheckFirebaseAndroid(ReportSection sec, string pkg)
         {
             var jsons = Directory.GetFiles("Assets", "google-services.json", SearchOption.AllDirectories).Select(Norm).ToList();
             if (jsons.Count == 0)
@@ -102,7 +150,10 @@ namespace GenZ.TestSuit
                         dp == project ? "Matches google-services.json (used in Play mode)" : $"Has project \"{dp}\" — Play mode in the Editor uses another Firebase project. Reimport google-services.json");
                 }
             }
+        }
 
+        static void CheckFirebaseModules(ReportSection sec, IntegrationSettings s)
+        {
             // Firebase modules the game code uses.
             var dlls = Directory.GetFiles("Assets", "Firebase.*.dll", SearchOption.AllDirectories)
                 .Select(f => Path.GetFileNameWithoutExtension(f)).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
@@ -123,7 +174,7 @@ namespace GenZ.TestSuit
 
         // ================================================================= Android dependencies
 
-        static void CheckDependencies(ReportSection sec, IntegrationSettings s, string projectSettings)
+        static void CheckDependencies(ReportSection sec, IntegrationSettings s, string projectSettings, bool ios)
         {
             // Every *Dependencies.xml, grouped by SDK folder (MAX adapters each count as their own SDK).
             var groups = new SortedDictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
@@ -143,7 +194,14 @@ namespace GenZ.TestSuit
                 var folder = bar > 0 ? entry.Substring(bar + 1) : entry;
                 bool installed = Directory.Exists(Path.Combine("Assets", folder));
                 sec.Add($"{label} installed", installed ? CheckStatus.Pass : CheckStatus.Fail, "Assets/" + folder,
-                    installed ? (groups.ContainsKey(folder) ? "SDK folder and its Android dependencies file found" : "SDK folder found") : "SDK folder is missing — import the SDK");
+                    installed ? (groups.ContainsKey(folder) ? "SDK folder and its dependencies file found" : "SDK folder found") : "SDK folder is missing — import the SDK");
+            }
+
+            if (ios)
+            {
+                sec.Add("Resolved (iOS)", CheckStatus.Info, "CocoaPods",
+                    "iOS: the pods in the *Dependencies.xml files are installed when Unity builds the Xcode project (Podfile), so there's nothing resolved to check here");
+                return;
             }
 
             bool customGradle = Regex.IsMatch(projectSettings, @"useCustomMainGradleTemplate:\s*1");
@@ -194,108 +252,112 @@ namespace GenZ.TestSuit
         static readonly Regex GradleDep = new Regex(@"^[ \t]*(?:implementation|api|compile)\s*\(?\s*['""]([^'"":\s]+):([^'"":\s]+):([^'""\s]+)['""]", RegexOptions.Multiline);
         static readonly Regex AarName = new Regex(@"^([\w.-]+?)\.([\w-]+)-(\d[\w.\-\[\]]*)\.(aar|jar)$");
 
-        class Found { public string ga, version, where; public int line; }
+        static readonly Regex IosPodTag = new Regex(@"<iosPod\b([^>]*)>", RegexOptions.IgnoreCase);
 
-        // The studio's MAX adapter set: every listed adapter installed (Android dependency), IronSource gone, and any
-        // other adapter reported. Read from every *Dependencies.xml (comments ignored), the resolved mainTemplate.gradle,
-        // adapter .aar/.jar files the resolver copied into Plugins/Android, and the MaxSdk/Mediation folders.
-        static void CheckMaxAdapters(ReportSection sec, IntegrationSettings s, string projectSettings)
+        class Found { public string key, version, where; public int line; }
+        class AdapterEntry { public string name, android, ios; }
+
+        // The studio's MAX adapter set: every listed adapter installed, IronSource gone, and any other adapter reported.
+        // Android: Maven packages from every *Dependencies.xml (comments ignored), the resolved mainTemplate.gradle and adapter
+        // .aar/.jar files in Plugins/Android. iOS: the <iosPod> names in the same *Dependencies.xml files. Both: MaxSdk/Mediation.
+        static void CheckMaxAdapters(ReportSection sec, IntegrationSettings s, string projectSettings, bool ios)
         {
-            var required = Parse(s.maxAdapters);
-            var forbidden = Parse(s.forbiddenAdapters);
+            var required = ParseAdapters(s.maxAdapters);
+            var forbidden = ParseAdapters(s.forbiddenAdapters);
+            string platform = ios ? "iOS" : "Android";
+            string Spec(AdapterEntry e) => ios ? e.ios : e.android;
+            string pattern = ios ? s.iosAdapterPattern : s.adapterPattern;
             Regex adapterRx = null;
-            try { if (!string.IsNullOrWhiteSpace(s.adapterPattern)) adapterRx = new Regex(s.adapterPattern, RegexOptions.IgnoreCase); }
-            catch (ArgumentException e) { sec.Add("Adapter pattern", CheckStatus.Warn, s.adapterPattern, "Not a valid regex, unlisted adapters aren't looked for: " + e.Message); }
+            try { if (!string.IsNullOrWhiteSpace(pattern)) adapterRx = new Regex(pattern, RegexOptions.IgnoreCase); }
+            catch (ArgumentException e) { sec.Add("Adapter pattern", CheckStatus.Warn, pattern, "Not a valid regex, unlisted adapters aren't looked for: " + e.Message); }
 
-            var found = new List<Found>();
-            foreach (var file in Directory.GetFiles("Assets", "*Dependencies.xml", SearchOption.AllDirectories).Select(Norm))
-            {
-                var text = Read(file) ?? "";
-                var xml = XmlComment.Replace(text, m => Regex.Replace(m.Value, "[^\n]", " "));
-                foreach (Match sm in SpecRegex.Matches(xml))
-                {
-                    var p = sm.Groups[1].Value.Trim().Split(':');
-                    if (p.Length >= 2) found.Add(new Found { ga = (p[0] + ":" + p[1]).ToLowerInvariant(), version = p.Length > 2 ? p[2] : "", where = file, line = LineAt(xml, sm.Index) });
-                }
-            }
-            bool customGradle = Regex.IsMatch(projectSettings, @"useCustomMainGradleTemplate:\s*1");
-            var gradle = customGradle ? Read(MainGradle) : null;
-            if (gradle != null)
-                foreach (Match gm in GradleDep.Matches(gradle))
-                    found.Add(new Found { ga = (gm.Groups[1].Value + ":" + gm.Groups[2].Value).ToLowerInvariant(), version = gm.Groups[3].Value, where = MainGradle, line = LineAt(gradle, gm.Index) });
-            if (Directory.Exists(PluginsAndroid))
-                foreach (var lib in Directory.GetFiles(PluginsAndroid, "*.*", SearchOption.AllDirectories).Where(f => f.EndsWith(".aar") || f.EndsWith(".jar")).Select(Norm))
-                {
-                    var am = AarName.Match(Path.GetFileName(lib));
-                    if (am.Success) found.Add(new Found { ga = (am.Groups[1].Value + ":" + am.Groups[2].Value).ToLowerInvariant(), version = am.Groups[3].Value, where = lib, line = 0 });
-                }
+            var found = ios ? FindIosPods() : FindAndroidPackages(projectSettings);
 
-            bool maxInstalled = Directory.Exists("Assets/MaxSdk") || found.Any(f => f.ga.StartsWith("com.applovin:applovin-sdk"));
+            bool maxInstalled = Directory.Exists("Assets/MaxSdk")
+                                || found.Any(f => f.key.StartsWith("com.applovin:applovin-sdk", StringComparison.OrdinalIgnoreCase) || f.key.Equals("AppLovinSDK", StringComparison.OrdinalIgnoreCase));
             if (!maxInstalled)
             {
-                sec.Add("AppLovin MAX", CheckStatus.Info, "not installed", "No MaxSdk folder or com.applovin:applovin-sdk dependency: adapters not checked");
+                sec.Add("AppLovin MAX", CheckStatus.Info, "not installed", "No MaxSdk folder or AppLovin SDK dependency: adapters not checked");
                 return;
             }
 
-            bool Matches(Found f, string spec) => spec.EndsWith(":") ? f.ga.StartsWith(spec) : f.ga == spec;
+            bool Matches(Found f, string spec) => spec.EndsWith(":")
+                ? f.key.StartsWith(spec, StringComparison.OrdinalIgnoreCase)
+                : f.key.Equals(spec, StringComparison.OrdinalIgnoreCase);
             string Places(IEnumerable<Found> list) => string.Join(", ", list.Select(f => f.where + (f.line > 0 ? ":" + f.line : "")).Distinct().Take(4));
+            string resolveHint = ios ? "then build (pods are installed when Unity builds the Xcode project)" : "then Force Resolve";
 
-            // 1. Every listed adapter is installed (its Dependencies.xml), or at least resolved into Gradle / Plugins/Android.
+            // 1. Every listed adapter is installed (its Dependencies.xml); on Android, one only left in Gradle / Plugins/Android fails too.
             var missing = new List<string>();
-            foreach (var (name, spec) in required)
+            int listed = 0;
+            foreach (var e in required)
             {
+                var spec = Spec(e);
+                if (spec.Length == 0)
+                {
+                    sec.Add($"{e.name} adapter", CheckStatus.Warn, "not checked",
+                        $"No {platform} package for {e.name} in config integration.maxAdapters ('<Network>|<Android package>|<iOS pod>'): add it so the {platform} build is checked");
+                    continue;
+                }
+                listed++;
                 var hits = found.Where(f => Matches(f, spec)).ToList();
                 var xmlHit = hits.FirstOrDefault(f => f.where.EndsWith(".xml"));
                 if (xmlHit != null)
-                    sec.Add($"{name} adapter", CheckStatus.Pass, xmlHit.version, $"{spec} in {xmlHit.where}", xmlHit.where, xmlHit.line);
+                    sec.Add($"{e.name} adapter", CheckStatus.Pass, xmlHit.version, $"{spec} in {xmlHit.where}", xmlHit.where, xmlHit.line);
                 else if (hits.Count > 0)
                 {
-                    missing.Add(name + " (only left in Gradle)");
-                    sec.Add($"{name} adapter", CheckStatus.Fail, "not installed",
+                    missing.Add(e.name + " (only left in Gradle)");
+                    sec.Add($"{e.name} adapter", CheckStatus.Fail, "not installed",
                         $"{spec} is only in {Places(hits)}, left from an earlier resolve: its Dependencies.xml is gone, so the next Force Resolve drops it. Reinstall the adapter",
                         hits[0].where, hits[0].line);
                 }
                 else
                 {
-                    missing.Add(name);
-                    bool custom = !spec.StartsWith("com.applovin.mediation:");
-                    sec.Add($"{name} adapter", CheckStatus.Fail, "missing",
-                        $"{spec} isn't installed: MAX can't fill ads from {name}. "
-                        + (custom ? "It's a custom network: add its *Dependencies.xml (e.g. under Assets/Editor) and Force Resolve"
-                                  : "Install it from AppLovin → Integration Manager, then Force Resolve"));
+                    missing.Add(e.name);
+                    bool custom = !(e.android.StartsWith("com.applovin.mediation:", StringComparison.OrdinalIgnoreCase)
+                                    || e.ios.StartsWith("AppLovinMediation", StringComparison.OrdinalIgnoreCase));
+                    sec.Add($"{e.name} adapter", CheckStatus.Fail, "missing",
+                        $"{spec} isn't installed: MAX can't fill ads from {e.name} on {platform}. "
+                        + (custom ? $"It's a custom network: add its *Dependencies.xml with the {platform} {(ios ? "pod" : "package")} (e.g. under Assets/Editor) {resolveHint}"
+                                  : $"Install it from AppLovin → Integration Manager, {resolveHint}"));
                 }
             }
             sec.Add("All studio adapters installed", missing.Count == 0 ? CheckStatus.Pass : CheckStatus.Fail,
-                missing.Count == 0 ? $"{required.Count} of {required.Count}" : $"{missing.Count} missing",
-                missing.Count == 0 ? "Every adapter in the studio list (config integration.maxAdapters) is there" : "Missing: " + string.Join(", ", missing));
+                missing.Count == 0 ? $"{listed} of {listed} ({platform})" : $"{missing.Count} missing ({platform})",
+                missing.Count == 0 ? $"Every adapter in the studio list (config integration.maxAdapters) is there for {platform}" : "Missing: " + string.Join(", ", missing));
 
             // 2. Removed networks (IronSource) must be fully gone: dependency files, Gradle, libraries and the Mediation folder.
-            foreach (var (name, spec) in forbidden)
+            foreach (var e in forbidden)
             {
-                var hits = found.Where(f => Matches(f, spec)).ToList();
-                var folderName = Regex.Replace(name, @"\W.*$", "");
+                var spec = Spec(e);
+                var hits = spec.Length == 0 ? new List<Found>() : found.Where(f => Matches(f, spec)).ToList();
+                var folderName = Regex.Replace(e.name, @"\W.*$", "");
                 // The Integration Manager's folder (MaxSdk/Mediation/IronSource), for MAX adapters only.
-                var folder = Directory.Exists("Assets/MaxSdk/Mediation") && folderName.Length > 0 && spec.StartsWith("com.applovin.mediation:")
+                bool maxAdapter = e.android.StartsWith("com.applovin.mediation:", StringComparison.OrdinalIgnoreCase)
+                                  || e.ios.StartsWith("AppLovinMediation", StringComparison.OrdinalIgnoreCase);
+                var folder = Directory.Exists("Assets/MaxSdk/Mediation") && folderName.Length > 0 && maxAdapter
                     ? Directory.GetDirectories("Assets/MaxSdk/Mediation").Select(Norm).FirstOrDefault(d => string.Equals(Path.GetFileName(d), folderName, StringComparison.OrdinalIgnoreCase))
                     : null;
+                if (spec.Length == 0 && folder == null) continue; // nothing to look for on this platform
                 if (hits.Count == 0 && folder == null)
                 {
-                    sec.Add($"{name} removed", CheckStatus.Pass, "not included", $"No {spec} in the project");
+                    sec.Add($"{e.name} removed", CheckStatus.Pass, "not included", $"No {spec} in the project");
                     continue;
                 }
                 var where = Places(hits) + (folder != null ? (hits.Count > 0 ? ", " : "") + folder : "");
-                sec.Add($"{name} removed", CheckStatus.Fail, "still included",
-                    $"{name} must not be in the build, but it's in {where}. Remove it with AppLovin → Integration Manager (or delete "
-                    + (folder ?? "its Dependencies.xml") + "), then Force Resolve so mainTemplate.gradle drops it",
+                sec.Add($"{e.name} removed", CheckStatus.Fail, "still included",
+                    $"{e.name} must not be in the build, but it's in {where}. Remove it with AppLovin → Integration Manager (or delete "
+                    + (folder ?? "its Dependencies.xml") + ")" + (ios ? "" : ", then Force Resolve so mainTemplate.gradle drops it"),
                     hits.FirstOrDefault()?.where ?? folder, hits.FirstOrDefault()?.line ?? 0);
             }
 
             // 3. Any other adapter: not in the studio list.
             int unknown = 0;
             if (adapterRx != null)
-                foreach (var g in found.Where(f => adapterRx.IsMatch(f.ga)
-                                                  && !required.Any(r => Matches(f, r.spec)) && !forbidden.Any(r => Matches(f, r.spec)))
-                                       .GroupBy(f => f.ga))
+                foreach (var g in found.Where(f => adapterRx.IsMatch(f.key)
+                                                  && !required.Any(r => Spec(r).Length > 0 && Matches(f, Spec(r)))
+                                                  && !forbidden.Any(r => Spec(r).Length > 0 && Matches(f, Spec(r))))
+                                       .GroupBy(f => f.key, StringComparer.OrdinalIgnoreCase))
                 {
                     unknown++;
                     var first = g.OrderBy(f => f.where.EndsWith(".xml") ? 0 : 1).First();
@@ -305,16 +367,135 @@ namespace GenZ.TestSuit
                         first.where, first.line);
                 }
             if (adapterRx != null && unknown == 0)
-                sec.Add("No unlisted adapters", CheckStatus.Pass, "", "Every adapter in the project is in the studio list");
+                sec.Add("No unlisted adapters", CheckStatus.Pass, platform, "Every adapter in the project is in the studio list");
         }
 
-        static List<(string name, string spec)> Parse(string[] entries) =>
+        static List<Found> FindAndroidPackages(string projectSettings)
+        {
+            var found = new List<Found>();
+            foreach (var file in Directory.GetFiles("Assets", "*Dependencies.xml", SearchOption.AllDirectories).Select(Norm))
+            {
+                var xml = XmlComment.Replace(Read(file) ?? "", m => Regex.Replace(m.Value, "[^\n]", " "));
+                foreach (Match sm in SpecRegex.Matches(xml))
+                {
+                    var p = sm.Groups[1].Value.Trim().Split(':');
+                    if (p.Length >= 2) found.Add(new Found { key = p[0] + ":" + p[1], version = p.Length > 2 ? p[2] : "", where = file, line = LineAt(xml, sm.Index) });
+                }
+            }
+            bool customGradle = Regex.IsMatch(projectSettings, @"useCustomMainGradleTemplate:\s*1");
+            var gradle = customGradle ? Read(MainGradle) : null;
+            if (gradle != null)
+                foreach (Match gm in GradleDep.Matches(gradle))
+                    found.Add(new Found { key = gm.Groups[1].Value + ":" + gm.Groups[2].Value, version = gm.Groups[3].Value, where = MainGradle, line = LineAt(gradle, gm.Index) });
+            if (Directory.Exists(PluginsAndroid))
+                foreach (var lib in Directory.GetFiles(PluginsAndroid, "*.*", SearchOption.AllDirectories).Where(f => f.EndsWith(".aar") || f.EndsWith(".jar")).Select(Norm))
+                {
+                    var am = AarName.Match(Path.GetFileName(lib));
+                    if (am.Success) found.Add(new Found { key = am.Groups[1].Value + ":" + am.Groups[2].Value, version = am.Groups[3].Value, where = lib, line = 0 });
+                }
+            return found;
+        }
+
+        static List<Found> FindIosPods()
+        {
+            var found = new List<Found>();
+            foreach (var file in Directory.GetFiles("Assets", "*Dependencies.xml", SearchOption.AllDirectories).Select(Norm))
+            {
+                var xml = XmlComment.Replace(Read(file) ?? "", m => Regex.Replace(m.Value, "[^\n]", " "));
+                foreach (Match pm in IosPodTag.Matches(xml))
+                {
+                    var name = Regex.Match(pm.Groups[1].Value, @"\bname\s*=\s*""([^""]+)""").Groups[1].Value.Trim();
+                    if (name.Length == 0) continue;
+                    var version = Regex.Match(pm.Groups[1].Value, @"\bversion\s*=\s*""([^""]*)""").Groups[1].Value.Trim();
+                    found.Add(new Found { key = name, version = version, where = file, line = LineAt(xml, pm.Index) });
+                }
+            }
+            return found;
+        }
+
+        // '<Network>|<Android group:artifact>|<iOS pod>'; the iOS part is optional (old 2-part entries = Android only).
+        static List<AdapterEntry> ParseAdapters(string[] entries) =>
             (entries ?? new string[0]).Where(e => !string.IsNullOrWhiteSpace(e)).Select(e =>
             {
-                var bar = e.IndexOf('|');
-                var spec = (bar > 0 ? e.Substring(bar + 1) : e).Trim().ToLowerInvariant();
-                return (bar > 0 ? e.Substring(0, bar).Trim() : spec, spec);
+                var p = e.Split('|');
+                return new AdapterEntry
+                {
+                    name = p[0].Trim(),
+                    android = p.Length > 1 ? p[1].Trim() : "",
+                    ios = p.Length > 2 ? p[2].Trim() : "",
+                };
             }).ToList();
+
+        // ================================================================= iOS build setup
+
+        static readonly Regex AttRequest = new Regex(@"\bRequestAuthorizationTracking\s*\(|\brequestTrackingAuthorization\b");
+
+        // iOS: Apple's tracking prompt needs NSUserTrackingUsageDescription in Info.plist (iOS stops the app without it), and the
+        // ios-support package copies every SKAdNetworks(.xml/.json) file in the project into Info.plist, sample ones included.
+        static void CheckIosBuild(ReportSection sec)
+        {
+            // Who shows the tracking prompt: game code, or MAX's own consent flow.
+            string promptIn = null;
+            foreach (var f in Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories).Select(Norm))
+            {
+                if (f.IndexOf("/Editor/", StringComparison.OrdinalIgnoreCase) >= 0 || f.StartsWith("Assets/MaxSdk/", StringComparison.OrdinalIgnoreCase)) continue;
+                var code = StripComments(Read(f) ?? "");
+                if (AttRequest.IsMatch(code)) { promptIn = f; break; }
+            }
+            var maxSettings = Read("ProjectSettings/AppLovinInternalSettings.json") ?? "";
+            bool maxFlow = Regex.IsMatch(maxSettings, @"""consentFlowEnabled""\s*:\s*true");
+            if (maxFlow && promptIn == null) promptIn = "AppLovin MAX consent flow";
+
+            // Where the prompt text can be set; each SDK's iOS build step writes it into Info.plist.
+            var texts = new List<string>();
+            var gma = Directory.GetFiles("Assets", "GoogleMobileAdsSettings.asset", SearchOption.AllDirectories).Select(Norm).FirstOrDefault();
+            if (gma != null && Regex.IsMatch(Read(gma) ?? "", @"^[ \t]*userTrackingUsageDescription:[ \t]*['""]?[^'""\s]", RegexOptions.Multiline))
+                texts.Add("Google Mobile Ads settings");
+            var adjust = Directory.GetFiles("Assets", "AdjustSettings.asset", SearchOption.AllDirectories).Select(Norm).FirstOrDefault();
+            if (adjust != null && Regex.IsMatch(Read(adjust) ?? "", @"^[ \t]*_iOSUserTrackingUsageDescription:[ \t]*['""]?[^'""\s]", RegexOptions.Multiline))
+                texts.Add("Adjust settings");
+            if (maxFlow && Regex.IsMatch(maxSettings, @"""userTrackingUsageDescriptionEn""\s*:\s*""[^""]+"""))
+                texts.Add("AppLovin MAX consent flow");
+
+            if (promptIn == null)
+                sec.Add("App Tracking prompt text", CheckStatus.Info, texts.Count > 0 ? string.Join(", ", texts) : "not set",
+                    "No code asks for Apple's tracking permission (RequestAuthorizationTracking), so NSUserTrackingUsageDescription isn't required");
+            else if (texts.Count > 0)
+                sec.Add("App Tracking prompt text", CheckStatus.Pass, string.Join(", ", texts),
+                    $"The tracking prompt ({promptIn}) gets its NSUserTrackingUsageDescription text from {string.Join(", ", texts)}");
+            else
+                sec.Add("App Tracking prompt text", CheckStatus.Fail, "not set",
+                    $"{promptIn} asks for Apple's tracking permission, but no NSUserTrackingUsageDescription text is set: iOS stops the app when the prompt "
+                    + "is requested, and App Review rejects it. Set it in Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings (User Tracking Usage Description), "
+                    + "Adjust settings, or AppLovin's consent flow", promptIn.EndsWith(".cs") ? promptIn : null, 0);
+
+            // SKAdNetwork files the ios-support package's build step reads (by exact name, anywhere in the project).
+            var skan = Directory.GetFiles("Assets", "SKAdNetworks*", SearchOption.AllDirectories).Select(Norm)
+                .Where(f => { var n = Path.GetFileName(f); return n == "SKAdNetworks" || n == "SKAdNetworks.xml" || n == "SKAdNetworks.json"; }).ToList();
+            bool iosSupport = (Read("Packages/manifest.json") ?? "").Contains("com.unity.ads.ios-support");
+            if (skan.Count == 0)
+                sec.Add("SKAdNetwork files", CheckStatus.Pass, "none", "No SKAdNetworks files in Assets: Info.plist only gets the SKAdNetwork IDs the ad SDKs add (MAX adds its networks')");
+            foreach (var f in skan)
+            {
+                var text = Read(f) ?? "";
+                bool sample = f.IndexOf("IOS IDFA Support", StringComparison.OrdinalIgnoreCase) >= 0
+                              || Regex.IsMatch(text, @"123456\.skadnetwork|""company_domain""\s*:\s*""company\.com""|\bDSP1\b|\bMMP1\b");
+                bool url = !text.TrimStart().StartsWith("<") && !text.TrimStart().StartsWith("[") && !text.TrimStart().StartsWith("{");
+                if (!iosSupport)
+                    sec.Add("SKAdNetwork file · " + f, CheckStatus.Info, "not read", "The com.unity.ads.ios-support package isn't installed, so this file isn't copied into Info.plist", f, 1);
+                else if (sample && !url)
+                    sec.Add("SKAdNetwork file · " + f, CheckStatus.Fail, "sample IDs",
+                        "A sample/test file from the iOS support package: its build step copies these IDs (e.g. 123456.skadnetwork, made-up DSP1/MMP1) into Info.plist. "
+                        + "Delete it (MAX already adds its networks' SKAdNetwork IDs)", f, 1);
+                else if (sample)
+                    sec.Add("SKAdNetwork file · " + f, CheckStatus.Warn, "downloads a list",
+                        "A sample file from the iOS support package: at build time it downloads Unity's SKAdNetwork list and adds it to Info.plist (and the build needs internet). "
+                        + "MAX already adds its networks' IDs, so delete it unless you rely on it", f, 1);
+                else
+                    sec.Add("SKAdNetwork file · " + f, CheckStatus.Warn, url ? "downloads a list" : "IDs added",
+                        "Every ID in this file is added to Info.plist on iOS builds" + (url ? " (downloaded from the URL at build time)" : "") + ": make sure they belong to your ad networks", f, 1);
+            }
+        }
 
         // ================================================================= Gradle / manifest
 

@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -335,13 +335,18 @@ namespace GenZ.TestSuit
         // ---------------------------------------------------------------- release guard (Editor suite, step 2)
 
         /// <summary>A release must not carry the Test Environment: the define, the panel's file, or a test value.</summary>
-        public static void CheckRelease(TestReport report, GenZTestSuitConfig cfg)
+        /// <param name="ios">Build target iOS: the test define is an Android one, so it's only reported; the JSON still ships in Resources.</param>
+        public static void CheckRelease(TestReport report, GenZTestSuitConfig cfg, bool ios = false)
         {
             var s = cfg.deepTest ?? new DeepTestSettings();
             var sec = report.Section("Release Environment (GenZ-DeepTestSuit)", TestStage.Integration);
             bool define = DefineOn(s);
-            sec.Add("Test define off", define ? CheckStatus.Fail : CheckStatus.Pass, define ? s.define + " is set" : "not set",
-                define ? "The build would include the phone's test panel. Test Suit → GenZ-DeepTestSuit → Apply Release Environment." : "OK");
+            if (ios)
+                sec.Add("Test define off", define ? CheckStatus.Info : CheckStatus.Pass, define ? s.define + " is set (Android)" : "not set",
+                    define ? "Set for Android only, so the iOS build doesn't include the test panel. Apply Release Environment (Android target) before the next Android build." : "OK");
+            else
+                sec.Add("Test define off", define ? CheckStatus.Fail : CheckStatus.Pass, define ? s.define + " is set" : "not set",
+                    define ? "The build would include the phone's test panel. Test Suit → GenZ-DeepTestSuit → Apply Release Environment." : "OK");
             sec.Add("Test panel settings removed", JsonExists ? CheckStatus.Fail : CheckStatus.Pass, JsonExists ? RuntimeJson : "none",
                 JsonExists ? "Left from the Test Environment. Apply Release Environment removes it." : "OK");
         }

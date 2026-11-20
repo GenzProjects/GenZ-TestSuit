@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -43,6 +43,8 @@ namespace GenZ.TestSuit
             public readonly Dictionary<string, string> idOwners = new Dictionary<string, string>(); // id value -> first "Rule › Field"
             public readonly Dictionary<string, string> values = new Dictionary<string, string>();   // "Rule/Field" -> value (for sameAs)
             public readonly List<IdFix> fixes = new List<IdFix>();                                   // IDs Auto Apply can set from the sheet
+            public HashSet<GameObject> startedByConsent = new HashSet<GameObject>();               // inactive SDK objects ConsentManager switches on
+            public bool v133;                                                                        // the project uses GenZ Ads v1.33 or newer
         }
 
         /// <param name="package">The game whose sheet row the project is checked against (picked in the window). Null = this project's package.</param>
@@ -68,7 +70,7 @@ namespace GenZ.TestSuit
             {
                 var url = cfg.EffectiveSheetUrl;
                 var sheet = new GenZSheetReader();
-                if (!sheet.Download(url, cfg.sheetTabs) || !sheet.SelectGame(pkg, cfg.packageColumnNames))
+                if (!sheet.Download(url, cfg.SheetTabsFor(GenZTestSuitConfig.IosTarget)) || !sheet.SelectGame(pkg, cfg.packageColumnNames))
                     env.Add("Google Sheet", CheckStatus.Fail, Shorten(url, 60), sheet.error);
                 else
                 {
@@ -81,6 +83,11 @@ namespace GenZ.TestSuit
             else
                 env.Add("Google Sheet", CheckStatus.Info, "", "Sheet verification turned off");
 
+            // The GenZ Ads version the project uses: v1.33 features are required from v1.33 projects, only reported for v1.32.
+            var adsPkg = GenZCodeChecks.DetectAdsVersion();
+            env.Add("GenZ Ads package", CheckStatus.Info, adsPkg.Label + (adsPkg.folder != null ? " · " + adsPkg.folder : ""),
+                $"Checked as {adsPkg.Label}, from {adsPkg.how}" + (adsPkg.V133 ? "" : ". Features added in v1.33 are only reported"));
+
             if (EditorUtility.scriptCompilationFailed)
                 env.Add("Script compilation", CheckStatus.Fail, "", "The project has compile errors — fix them first (Console). Scene scripts show as Missing until then.")
                     .stage = TestStage.Integration;
@@ -89,6 +96,10 @@ namespace GenZ.TestSuit
             var opened = new List<Scene>();
             var taichi = cfg.taichi ?? new TaichiSettings();
             var taichiIn = new TaichiInput();
+            bool ios = EditorUserBuildSettings.activeBuildTarget == BuildTarget.iOS;
+            var codeSettings = cfg.codeChecks ?? new CodeCheckSettings();
+            GenZSourceModel model = null; // the game's scripts, read once for the Taichi and code checks
+            GenZSourceModel Model() => model ?? (model = GenZSourceModel.Load(codeSettings.excludeFolders ?? new string[0]));
             if (cfg.runIdChecks || taichi.enabled)
             try
             {
@@ -96,17 +107,28 @@ namespace GenZ.TestSuit
                 var ads = FindAdsObject(cfg, env, scenes);
                 var sdkScene = ads != null ? ads.scene : scenes.FirstOrDefault();
                 if (taichi.enabled) ReadTaichiSwitches(taichi, scenes, ads, taichiIn);
+                // v1.33: SDK objects start inactive and ConsentManager switches them on (its Analytical / Monetization Objects).
+                ctx.startedByConsent = ConsentStartedObjects(scenes);
+                ctx.v133 = adsPkg.V133;
 
                 if (cfg.runIdChecks)
-                foreach (var rule in cfg.rules)
+                foreach (var rule in cfg.rules.Select(r => r.For(ios))) // iOS: iOS field names / platform, "Android" → "iOS" in labels
                 {
                     switch (rule.target)
                     {
-                        case RuleTarget.AdsObject: CheckAdsObjectRule(report, rule, ads, ctx); break;
+                        case RuleTarget.AdsObject: CheckAdsObjectRule(report, rule, ads, scenes, ctx); break;
                         case RuleTarget.SceneObject: CheckSceneObjectRule(report, rule, scenes, sdkScene, ctx); break;
                         case RuleTarget.Asset: CheckAssetRule(report, rule, ctx); break;
                     }
                 }
+
+                if (cfg.runIntegrationChecks)
+                    CheckConsentManager(report.Section(SectionConsent, TestStage.Integration), scenes, opened, adsPkg.V133);
+
+                // Privacy policy and More Games links = the live store's links in the sheet. Scanned while the SDK scenes
+                // (and the first build scene the consent check may have opened) are open, so their buttons get Auto Correct.
+                if (cfg.runIdChecks && (cfg.storeLinks ?? new StoreLinkSettings()).enabled)
+                    GenZStoreLinkChecks.Run(report, ctx.sheet, cfg, scenes.Concat(opened).Distinct().ToList(), ctx.fixes, ios, pkg);
             }
             finally
             {
@@ -117,20 +139,22 @@ namespace GenZ.TestSuit
             // 3. SDK files and Android build setup (no scene needed).
             if (cfg.runIntegrationChecks)
             {
-                GenZIntegrationChecks.Run(report, pkg, cfg.integration ?? new IntegrationSettings());
+                GenZIntegrationChecks.Run(report, pkg, cfg.integration ?? new IntegrationSettings(), ios);
                 var player = cfg.playerSettings ?? new AndroidPlayerRules();
-                if (player.enabled) GenZPlayerSettingsChecks.Run(report, player);
-                GenZDeepTestSuit.CheckRelease(report, cfg);
+                if (player.enabled && !ios) GenZPlayerSettingsChecks.Run(report, player);
+                else if (player.enabled)
+                    report.Section("Player Settings (Android)", TestStage.Integration).Add("Build target", CheckStatus.Info, "iOS",
+                        "The build target is iOS: the Android Player Settings aren't checked (switch to Android in Build Settings to check them)");
+                GenZDeepTestSuit.CheckRelease(report, cfg, ios);
                 GenZSigning.Check(report, ctx.sheet, cfg.signing ?? new SigningSettings());
             }
 
             report.idFixes.AddRange(ctx.fixes);
 
             // 4. Taichi and the other code checks read the same scripts: load them once.
-            var codeSettings = cfg.codeChecks ?? new CodeCheckSettings();
             if (taichi.enabled || codeSettings.enabled)
             {
-                var model = GenZSourceModel.Load(codeSettings.excludeFolders);
+                Model();
                 if (taichi.enabled)
                 {
                     if (ctx.sheet != null)
@@ -180,7 +204,7 @@ namespace GenZ.TestSuit
                     }
                 }
                 if (codeSettings.enabled)
-                    GenZCodeChecks.Run(report, codeSettings, model);
+                    GenZCodeChecks.Run(report, codeSettings, model, EditorUserBuildSettings.activeBuildTarget == BuildTarget.iOS);
             }
             return report;
         }
@@ -239,6 +263,262 @@ namespace GenZ.TestSuit
                 input.taichi2Default = DisplayValue(d2);
                 input.taichi2DefaultProperty = d2.propertyPath;
             }
+        }
+
+        // ---------------------------------------------------------------- consent screen (ConsentManager, GenZ Ads v1.33)
+
+        const string SectionConsent = "Consent screen and startup (ConsentManager)";
+
+        // The first scene's ConsentManager shows the consent screen, then starts the analytics and ad objects and loads the
+        // next scene. Checked: it's in the first build scene, its screens and objects are set, ad objects start inactive (never
+        // before consent), something fetches Remote Config, the next scene is valid (not itself), and every button in that
+        // scene calls a method that exists (Accept included). A game without ConsentManager (v1.32) gets one Info row.
+        static void CheckConsentManager(ReportSection sec, List<Scene> scenes, List<Scene> opened, bool v133)
+        {
+            var build = EditorBuildSettings.scenes.Where(s => s.enabled).Select(s => s.path).ToList();
+            Component cm = FindConsentManager(scenes);
+            if (cm == null && build.Count > 0)
+            {
+                // It belongs in the first build scene: open that one too if the SDK scene isn't it.
+                var first = SceneManager.GetSceneByPath(build[0]);
+                if (!(first.IsValid() && first.isLoaded) && System.IO.File.Exists(build[0]))
+                {
+                    first = EditorSceneManager.OpenScene(build[0], OpenSceneMode.Additive);
+                    opened.Add(first);
+                }
+                if (first.IsValid()) cm = FindConsentManager(new List<Scene> { first });
+            }
+            if (cm == null)
+            {
+                bool script = AssetDatabase.FindAssets("ConsentManager t:MonoScript").Length > 0;
+                // Required from a GenZ Ads v1.33 project; a v1.32 one has no ConsentManager.
+                var status = v133 ? CheckStatus.Fail : script ? CheckStatus.Warn : CheckStatus.Info;
+                sec.Add("ConsentManager", status, script ? "not in a scene" : v133 ? "missing" : "v1.32 package",
+                    script ? $"The ConsentManager script exists but isn't in the first build scene ({(build.Count > 0 ? build[0] : "none")}) or the SDK scene: no consent screen, and nothing starts the ad objects"
+                    : v133 ? "GenZ Ads v1.33 starts the game from ConsentManager (consent screen, then the analytics and ad objects): copy it from the release and put it in the first scene"
+                           : "No ConsentManager (GenZ Ads v1.32; it's new in v1.33): not checked");
+                return;
+            }
+
+            var scene = cm.gameObject.scene;
+            var so = new SerializedObject(cm);
+            string where = HierarchyPath(cm.transform);
+            int ownIndex = build.IndexOf(scene.path);
+            sec.Add("In the first scene", ownIndex == 0 ? CheckStatus.Pass : CheckStatus.Warn, scene.name,
+                ownIndex == 0 ? $"{where} is in the first build scene" : $"{where} is in {scene.path}, not the first build scene ({(build.Count > 0 ? build[0] : "none")}): the game starts before the consent screen and ad setup");
+
+            // Screens.
+            var consentScreen = so.FindProperty("_consentScreen");
+            if (consentScreen != null)
+                sec.Add("Consent screen assigned", consentScreen.objectReferenceValue != null ? CheckStatus.Pass : CheckStatus.Fail,
+                    consentScreen.objectReferenceValue != null ? consentScreen.objectReferenceValue.name : "None",
+                    consentScreen.objectReferenceValue != null ? "Shown in the first session" : "Empty: a new player gets no consent screen and can't accept, so the game never starts");
+            var loadingScreen = so.FindProperty("_loadingScreen");
+            if (loadingScreen != null && loadingScreen.objectReferenceValue == null)
+                sec.Add("Loading screen assigned", CheckStatus.Warn, "None", "Empty: nothing is shown while the game waits for Remote Config");
+
+            // Objects it starts.
+            bool waitConsent = so.FindProperty("waitForConsentToLoadFirebase")?.boolValue ?? true;
+            var analytics = ObjectList(so.FindProperty("analyticalObjects"));
+            var ads = ObjectList(so.FindProperty("monetizationObjects"));
+            if (ads.Count == 0)
+                sec.Add("Monetization objects", CheckStatus.Fail, "none", "Monetization Objects is empty: no ad SDK starts (Ads, UnityIAP…)");
+            for (int i = 0; i < ads.Count; i++)
+            {
+                var go = ads[i];
+                if (go == null) { sec.Add($"Monetization object {i}", CheckStatus.Fail, "None", "Empty element: remove it or assign the object"); continue; }
+                sec.Add($"Monetization · {go.name}", go.activeSelf ? CheckStatus.Fail : CheckStatus.Pass, go.activeSelf ? "active" : "inactive",
+                    go.activeSelf ? "Active in the scene, so it starts before consent. Untick it: ConsentManager starts it after consent" : "Starts only after consent");
+            }
+            for (int i = 0; i < analytics.Count; i++)
+            {
+                var go = analytics[i];
+                if (go == null) { sec.Add($"Analytics object {i}", CheckStatus.Fail, "None", "Empty element: remove it or assign the object"); continue; }
+                if (waitConsent && go.activeSelf)
+                    sec.Add($"Analytics · {go.name}", CheckStatus.Warn, "active",
+                        "Active in the scene, so it starts before consent although Wait For Consent To Load Firebase is on. Untick it");
+            }
+
+            // Remote Config: something must fetch it, or the startup always waits the whole timeout.
+            bool firebase = analytics.Any(g => g != null && g.GetComponentsInChildren<Component>(true).Any(c => c != null && c.GetType().Name == "FirebaseManager"))
+                            || AllObjects(scene).Any(g => g.activeInHierarchy && g.GetComponents<Component>().Any(c => c != null && c.GetType().Name == "FirebaseManager"));
+            sec.Add("Firebase fetches Remote Config", firebase ? CheckStatus.Pass : CheckStatus.Warn, firebase ? "FirebaseManager" : "not found",
+                firebase ? "FirebaseManager is in Analytical Objects or active in the scene"
+                         : "No FirebaseManager in Analytical Objects or active in this scene: nothing fetches Remote Config, so the startup always waits the full timeout");
+
+            // Next scene. SceneManager.LoadScene(index) counts enabled build scenes only.
+            var mode = so.FindProperty("loadTargetSceneBy") ?? so.FindProperty("loadTargetSceneByBuildIndex");
+            bool byIndex = mode == null || (mode.propertyType == SerializedPropertyType.Boolean ? mode.boolValue : mode.intValue == 1);
+            if (byIndex)
+            {
+                int idx = so.FindProperty("targetSceneBuildIndex")?.intValue ?? -1;
+                string target = idx >= 0 && idx < build.Count ? build[idx] : null;
+                if (target == null)
+                    sec.Add("Next scene", CheckStatus.Fail, "index " + idx, $"No enabled scene at build index {idx} ({build.Count} enabled scenes): loading fails");
+                else if (target == scene.path)
+                    sec.Add("Next scene", CheckStatus.Fail, "index " + idx, $"Index {idx} is {scene.name} itself: the startup loads its own scene again, forever");
+                else
+                    sec.Add("Next scene", CheckStatus.Pass, "index " + idx, "Loads " + target);
+            }
+            else
+            {
+                var name = so.FindProperty("targetSceneName")?.stringValue ?? "";
+                bool inBuild = build.Any(p => System.IO.Path.GetFileNameWithoutExtension(p) == name || p == name);
+                bool self = name == scene.name || name == scene.path;
+                sec.Add("Next scene", !inBuild || self ? CheckStatus.Fail : CheckStatus.Pass, name.Length > 0 ? name : "empty",
+                    !inBuild ? $"\"{name}\" isn't an enabled scene in Build Settings: loading fails"
+                    : self ? "That's this scene itself: the startup loads it again, forever" : "Loads " + name);
+            }
+
+            // Buttons (any UnityEvent in the scene): the Accept button calls OnClickAcceptConsent, and no call points at a
+            // missing script or method (e.g. a button still calling a deleted Consent.OnClickPlay).
+            bool accept = false;
+            int brokenCalls = 0, hiddenCalls = 0;
+            string acceptCovered = null;
+            const System.Reflection.BindingFlags All = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Static
+                                                       | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic;
+            foreach (var go in AllObjects(scene))
+            foreach (var comp in go.GetComponents<Component>())
+            {
+                if (comp == null) continue;
+                var it = new SerializedObject(comp).GetIterator();
+                while (it.Next(true))
+                {
+                    if (it.name != "m_Calls" || !it.isArray) continue;
+                    for (int k = 0; k < it.arraySize; k++)
+                    {
+                        var call = it.GetArrayElementAtIndex(k);
+                        var target = call.FindPropertyRelative("m_Target")?.objectReferenceValue;
+                        var method = call.FindPropertyRelative("m_MethodName")?.stringValue ?? "";
+                        var typeName = call.FindPropertyRelative("m_TargetAssemblyTypeName")?.stringValue ?? "";
+                        if (method.Length == 0) continue;
+                        if (target == cm && method == "OnClickAcceptConsent")
+                        {
+                            var acceptCover = CoveredBy(go);
+                            if (acceptCover == null) accept = true;
+                            else acceptCovered = $"{HierarchyPath(go.transform)} is under {CoverName(acceptCover)}, which is drawn over its whole area and takes every tap";
+                        }
+                        bool exists = target != null && target.GetType() != typeof(MonoBehaviour)
+                                      && target.GetType().GetMethods(All).Any(m => m.Name == method);
+                        if (exists) continue;
+                        var cls = typeName.Split(',')[0].Trim();
+                        var cover = CoveredBy(go);
+                        if (cover != null)
+                        {
+                            // e.g. an old PP button left under its replacement PP_Button: it can never be tapped.
+                            hiddenCalls++;
+                            sec.Add($"{HierarchyPath(go.transform)}: {(cls.Length > 0 ? cls + "." : "")}{method}", CheckStatus.Info, "hidden leftover",
+                                $"Calls a {(target == null ? "missing target" : "missing method")}, but {CoverName(cover)} is drawn over its whole area, so it can never be tapped. "
+                                + "A leftover copy: safe to delete");
+                            continue;
+                        }
+                        brokenCalls++;
+                        sec.Add($"{HierarchyPath(go.transform)}: {(cls.Length > 0 ? cls + "." : "")}{method}", CheckStatus.Fail, target == null ? "no target" : "missing method",
+                            target == null ? "The event's target object or script is gone (deleted or Missing Script): tapping it does nothing. Point it at the right method"
+                                           : $"{target.GetType().Name} has no method {method} (renamed or deleted): tapping it does nothing. Point it at the right method");
+                    }
+                }
+            }
+            sec.Add("Accept button", accept ? CheckStatus.Pass : CheckStatus.Fail, accept ? "OnClickAcceptConsent" : acceptCovered != null ? "covered" : "not wired",
+                accept ? "A button the player can tap calls ConsentManager.OnClickAcceptConsent"
+                       : acceptCovered != null ? acceptCovered + ": a new player can't accept, so the game never starts. Move it on top (later in the hierarchy) or untick Raycast Target on the cover"
+                       : "No button in this scene calls ConsentManager.OnClickAcceptConsent: a new player can't accept, so the game never starts");
+            if (brokenCalls == 0)
+                sec.Add("Button / event calls", CheckStatus.Pass, scene.name, "Every button and event the player can tap calls a method that exists"
+                    + (hiddenCalls > 0 ? $" ({hiddenCalls} hidden leftover{(hiddenCalls > 1 ? "s" : "")} listed as info)" : ""));
+        }
+
+        /// <summary>The objects every ConsentManager in these scenes switches on (its Analytical and Monetization Objects).</summary>
+        static HashSet<GameObject> ConsentStartedObjects(IEnumerable<Scene> scenes)
+        {
+            var set = new HashSet<GameObject>();
+            foreach (var cm in scenes.Where(s => s.IsValid() && s.isLoaded).SelectMany(AllObjects)
+                         .SelectMany(g => g.GetComponents<Component>()).Where(c => c != null && c.GetType().Name == "ConsentManager"))
+            {
+                var so = new SerializedObject(cm);
+                foreach (var name in new[] { "analyticalObjects", "monetizationObjects" })
+                    foreach (var go in ObjectList(so.FindProperty(name)))
+                        if (go != null) set.Add(go);
+            }
+            return set;
+        }
+
+        static Component FindConsentManager(IEnumerable<Scene> scenes) =>
+            scenes.Where(s => s.IsValid() && s.isLoaded).SelectMany(AllObjects)
+                .SelectMany(g => g.GetComponents<Component>()).FirstOrDefault(c => c != null && c.GetType().Name == "ConsentManager");
+
+        static List<GameObject> ObjectList(SerializedProperty array)
+        {
+            var list = new List<GameObject>();
+            if (array == null || !array.isArray) return list;
+            for (int i = 0; i < array.arraySize; i++) list.Add(array.GetArrayElementAtIndex(i).objectReferenceValue as GameObject);
+            return list;
+        }
+
+        // ---------------------------------------------------------------- UI: can the player tap it?
+
+        /// <summary>
+        /// The UI element that takes every tap meant for this one: active, a raycast target (its Graphic's m_RaycastTarget on,
+        /// not under a CanvasGroup that blocks raycasts off), in the same Canvas, drawn after it (later in the hierarchy, so on
+        /// top) and covering its whole area. Its own children don't count (their taps reach it). Null = it can be tapped.
+        /// No UI package reference: plain engine types plus the serialized field, so it works in every game.
+        /// </summary>
+        internal static GameObject CoveredBy(GameObject go)
+        {
+            var rt = go != null ? go.transform as RectTransform : null;
+            if (rt == null || !go.activeInHierarchy) return null;
+            var canvas = go.GetComponentInParent<Canvas>();
+            if (canvas == null) return null;
+            var mine = WorldRect(rt);
+            if (mine.width <= 0f || mine.height <= 0f) return null;
+            float ex = mine.width * 0.01f, ey = mine.height * 0.01f;
+            bool after = false;
+            foreach (var t in canvas.GetComponentsInChildren<RectTransform>(false)) // depth-first = draw order inside one Canvas
+            {
+                if (t == rt) { after = true; continue; }
+                if (!after || t.IsChildOf(rt)) continue;
+                if (t.GetComponentInParent<Canvas>() != canvas) continue; // a nested Canvas sorts on its own
+                if (!BlocksRaycasts(t.gameObject)) continue;
+                var r = WorldRect(t);
+                if (r.xMin <= mine.xMin + ex && r.yMin <= mine.yMin + ey && r.xMax >= mine.xMax - ex && r.yMax >= mine.yMax - ey)
+                    return t.gameObject;
+            }
+            return null;
+        }
+
+        static bool BlocksRaycasts(GameObject g)
+        {
+            bool target = false;
+            foreach (var b in g.GetComponents<Behaviour>())
+            {
+                if (b == null || !b.enabled) continue;
+                var p = new SerializedObject(b).FindProperty("m_RaycastTarget"); // UI Graphic (Image, Text, TMP…)
+                if (p != null && p.propertyType == SerializedPropertyType.Boolean && p.boolValue) { target = true; break; }
+            }
+            if (!target) return false;
+            foreach (var grp in g.GetComponentsInParent<CanvasGroup>())
+            {
+                if (!grp.enabled) continue;
+                if (!grp.blocksRaycasts) return false;
+                if (grp.ignoreParentGroups) break;
+            }
+            return true;
+        }
+
+        static Rect WorldRect(RectTransform t)
+        {
+            var c = new Vector3[4];
+            t.GetWorldCorners(c);
+            return Rect.MinMaxRect(Mathf.Min(c[0].x, c[2].x), Mathf.Min(c[0].y, c[2].y), Mathf.Max(c[0].x, c[2].x), Mathf.Max(c[0].y, c[2].y));
+        }
+
+        /// <summary>The covering element's name for a report: the button it belongs to when it's part of one.</summary>
+        internal static string CoverName(GameObject cover)
+        {
+            for (var t = cover.transform; t != null; t = t.parent)
+                if (t.GetComponents<Component>().Any(c => c != null && c.GetType().Name.EndsWith("Button")))
+                    return HierarchyPath(t);
+            return HierarchyPath(cover.transform);
         }
 
         // ---------------------------------------------------------------- scene / object discovery
@@ -312,7 +592,8 @@ namespace GenZ.TestSuit
             bool nameMissed = wantedName.Length > 0 && bestScore < 1000;
             env.Add("SDK scene", CheckStatus.Pass, best.scene.name, best.scene.path);
             env.Add("Ads object", nameMissed ? CheckStatus.Warn : CheckStatus.Pass, LastAdsObjectPath,
-                (nameMissed ? $"No object named \"{wantedName}\" — " : "") + how + (best.activeInHierarchy ? "" : " · note: object is inactive"));
+                (nameMissed ? $"No object named \"{wantedName}\" — " : "") + how
+                + (best.activeInHierarchy ? "" : ConsentStartedObjects(scenes).Contains(best) ? " · inactive in the scene, started by ConsentManager (GenZ Ads v1.33)" : " · note: object is inactive"));
             return best;
         }
 
@@ -377,7 +658,7 @@ namespace GenZ.TestSuit
 
         // ---------------------------------------------------------------- rule targets
 
-        static void CheckAdsObjectRule(TestReport report, ScriptRule rule, GameObject ads, RunContext ctx)
+        static void CheckAdsObjectRule(TestReport report, ScriptRule rule, GameObject ads, List<Scene> scenes, RunContext ctx)
         {
             var section = report.Section(rule.label, TestStage.Integration);
             if (ads == null)
@@ -388,22 +669,38 @@ namespace GenZ.TestSuit
 
             var comp = FindComponent(ads, rule.scriptNames);
             string where = "on " + ads.name;
+            var status = CheckStatus.Pass;
             if (comp == null)
             {
                 // Not on the Ads object itself — look in its children before failing.
                 comp = ads.GetComponentsInChildren<Component>(true).FirstOrDefault(c => c != null && NameMatches(c.GetType().Name, rule.scriptNames));
-                if (comp != null) where = "on child " + HierarchyPath(comp.transform);
+                if (comp != null) { where = "on child " + HierarchyPath(comp.transform); status = CheckStatus.Warn; }
+            }
+            if (comp == null)
+            {
+                // GenZ Ads v1.33 puts FirebaseManager (+ RemoteConfigManager) and unityInApp on their own objects in the same scene,
+                // started by ConsentManager: look in the SDK scenes too (inactive objects included).
+                comp = scenes.Where(s => s.IsValid() && s.isLoaded).OrderBy(s => s == ads.scene ? 0 : 1).SelectMany(AllObjects)
+                    .Select(o => FindComponent(o, rule.scriptNames)).FirstOrDefault(c => c != null);
+                if (comp != null)
+                {
+                    bool started = ctx.startedByConsent.Contains(comp.gameObject) || comp.GetComponentsInParent<Transform>(true).Any(t => ctx.startedByConsent.Contains(t.gameObject));
+                    where = $"on its own object {comp.gameObject.scene.name} › {HierarchyPath(comp.transform)}"
+                            + (ctx.v133 ? " (GenZ Ads v1.33 layout" + (started ? ", started by ConsentManager)" : ")")
+                                        : " — GenZ Ads v1.32 keeps it on the Ads object");
+                    status = ctx.v133 ? CheckStatus.Pass : CheckStatus.Warn;
+                }
             }
 
             if (comp == null)
             {
                 var missing = ads.GetComponents<Component>().Any(c => c == null) ? " (the object has a Missing Script — check compile errors)" : "";
                 section.Add("Script attached", rule.required ? CheckStatus.Fail : CheckStatus.Warn, string.Join(" / ", rule.scriptNames),
-                    "Not found on the Ads object" + missing);
+                    "Not found on the Ads object or any object in " + string.Join(", ", scenes.Where(s => s.IsValid()).Select(s => s.name)) + missing);
                 return;
             }
 
-            section.Add("Script attached", comp.gameObject == ads ? CheckStatus.Pass : CheckStatus.Warn, comp.GetType().Name, where);
+            section.Add("Script attached", status, comp.GetType().Name, where);
             CheckFields(section, rule, new SerializedObject(comp), ctx);
         }
 
@@ -455,9 +752,16 @@ namespace GenZ.TestSuit
             if (rule.mustBeActive)
             {
                 var active = go.activeSelf;
-                section.Add("Object is active", active && go.activeInHierarchy ? CheckStatus.Pass : CheckStatus.Fail,
-                    "SetActive = " + (active ? "true" : "false"),
-                    !active ? "Enable the object (SetActive true)" : go.activeInHierarchy ? "OK" : "A parent object is inactive");
+                // v1.33: SDK objects start inactive and ConsentManager switches them on (Analytical / Monetization Objects).
+                bool started = go.GetComponentsInParent<Transform>(true).Any(t => ctx.startedByConsent.Contains(t.gameObject));
+                if (!go.activeInHierarchy && started)
+                    section.Add("Object is active", CheckStatus.Pass, "started by ConsentManager",
+                        "Inactive in the scene; ConsentManager switches it on (it's in its Analytical / Monetization Objects)");
+                else
+                    section.Add("Object is active", active && go.activeInHierarchy ? CheckStatus.Pass : CheckStatus.Fail,
+                        "SetActive = " + (active ? "true" : "false"),
+                        !active ? "Enable the object (SetActive true), or add it to ConsentManager's Analytical / Monetization Objects so it's started there"
+                        : go.activeInHierarchy ? "OK" : "A parent object is inactive");
             }
 
             if (rule.scriptNames == null || rule.scriptNames.Length == 0) return;
@@ -679,8 +983,9 @@ namespace GenZ.TestSuit
 
             int index = -1;
             for (int i = 0; i < platforms.arraySize && index < 0; i++)
-                if (string.Equals(DisplayValue(platforms.GetArrayElementAtIndex(i)), f.platformName, StringComparison.OrdinalIgnoreCase))
-                    index = i;
+                foreach (var name in (f.platformName ?? "").Split('|')) // "IPhonePlayer|iOS"; "I Phone Player" = "IPhonePlayer"
+                    if (index < 0 && GenZSheetReader.Normalize(DisplayValue(platforms.GetArrayElementAtIndex(i))) == GenZSheetReader.Normalize(name))
+                        index = i;
 
             if (index < 0)
             {

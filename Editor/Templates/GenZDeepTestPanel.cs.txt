@@ -1,4 +1,4 @@
-// GenZ-TestSuit-v1.0
+// GenZ-TestSuit-v1.0.1
 // GenZ-DeepTestSuit phone panel. Compiled only in the Test Environment: the GENZ_DEEP_TEST scripting define is set by
 // GenZ → Test Suit → GenZ-DeepTestSuit → Apply Test Environment and removed by Apply Release Environment, so a
 // release build has none of this. Shake the phone to open the panel, shake again to close it.
