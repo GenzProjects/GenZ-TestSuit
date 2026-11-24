@@ -89,8 +89,10 @@ public class FirebaseManager : MonoBehaviour
                     FetchDataAsync();
                 });
             
+            #if UNITY_ANDROID
             if (FirebaseMessagingManager.Instance != null)
                 FirebaseMessagingManager.Instance.InitializeFCM();
+            #endif
 
        
     }

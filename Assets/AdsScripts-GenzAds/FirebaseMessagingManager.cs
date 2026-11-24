@@ -1,15 +1,18 @@
 // GenzMonetization-v1.33
-using Firebase.Messaging;
+
 using Firebase.Extensions;
 using UnityEngine;
 using System;
 using Firebase.Analytics;
 #if UNITY_ANDROID
 using UnityEngine.Android;
+using Firebase.Messaging;
 #endif
 
 public class FirebaseMessagingManager : MonoBehaviour
 {
+#if UNITY_ANDROID
+    
     public static FirebaseMessagingManager Instance;
 
     // Fired when a notification arrives while the app is in the foreground
@@ -142,4 +145,5 @@ public class FirebaseMessagingManager : MonoBehaviour
         FirebaseMessaging.MessageReceived -= OnMessageReceived;
         FirebaseMessaging.TokenReceived  -= OnTokenReceived;
     }
+    #endif
 }
