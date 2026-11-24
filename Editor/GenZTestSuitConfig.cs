@@ -182,6 +182,20 @@ namespace GenZ.TestSuit
         public string adapterPattern = @"^com\.applovin\.mediation:[\w.-]+-adapter$|adapter-for-max|applovin-adapter|max-adapter";
         [Tooltip("Regex on the iOS pod name for what counts as an iOS ad network adapter. One that isn't in Max Adapters or Forbidden Adapters is a warning.")]
         public string iosAdapterPattern = @"^AppLovinMediation\w+Adapter$|ApplovinAdapter|MaxAdapter";
+        [Tooltip("SKAdNetwork IDs a network needs in the iOS Info.plist that no SDK adds by itself (MAX adds only its own networks'): "
+                 + "'<Network>|<id>[,<id>…]'. On iOS builds each ID must be added by a build script ([PostProcessBuild] writing SKAdNetworkItems, "
+                 + "e.g. AdsScripts-GenzAds/Editor/HelixSKAdNetwork.cs), an SKAdNetworks file, or GoogleMobileAdsSKAdNetworkItems.xml. A missing one fails.")]
+        public string[] skAdNetworkIds =
+        {
+            "Helix / Voodoo ADN (custom network)|tskbem2b5g.skadnetwork",
+        };
+        [Tooltip("Hardware features the custom Android manifest (Assets/Plugins/Android/AndroidManifest.xml) must declare as optional: "
+                 + "<uses-feature android:name=\"<name>\" android:required=\"false\" />, so Google Play doesn't hide the game from devices "
+                 + "without them. Missing, or required true / not set (= true), fails. Android builds only.")]
+        public string[] optionalUsesFeatures =
+        {
+            "android.hardware.wifi", "android.hardware.screen.portrait", "android.hardware.screen.landscape",
+        };
     }
 
     /// <summary>Step 2: the Android Player Settings the studio's release builds must have.</summary>
@@ -592,7 +606,7 @@ namespace GenZ.TestSuit
         static SheetTab StoresTab() => new SheetTab("Stors", "405200962");
         public const string DefaultAdsObjectName = "ADs";
         /// <summary>Bump when defaults change; older config assets are upgraded on load (rules reset, scene kept).</summary>
-        const int CurrentVersion = 12;
+        const int CurrentVersion = 13; // v13: integration.skAdNetworkIds (Helix), integration.optionalUsesFeatures
 
         // Must default to 0: assets saved before this field existed deserialize with the initializer value.
         [HideInInspector] public int configVersion;

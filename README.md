@@ -8,7 +8,7 @@ The GenZ studio's pre-release checker for Android games built on `AdsScripts-Gen
 
 ## Install
 
-The repo is private: git on your machine must be signed in to a GitHub account with access to `GenzProjects/GenZ-TestSuit`.
+The repo is public: no GitHub login is needed.
 
 **Window → Package Manager → + → Add package from git URL…**
 

@@ -41,9 +41,9 @@ namespace GenZ.TestSuit
             CheckDependencies(report.Section(ios ? SectionDepsIos : SectionDeps, TestStage.Integration), s, projectSettings, ios);
             CheckMaxAdapters(report.Section(SectionAdapters, TestStage.Integration), s, projectSettings, ios);
             if (ios)
-                CheckIosBuild(report.Section(SectionIos, TestStage.Integration));
+                CheckIosBuild(report.Section(SectionIos, TestStage.Integration), s);
             else
-                CheckBuildSetup(report.Section(SectionBuild, TestStage.Integration), projectSettings);
+                CheckBuildSetup(report.Section(SectionBuild, TestStage.Integration), projectSettings, s);
             CheckGaAdFormats(report, s, projectSettings);
         }
 
@@ -432,8 +432,10 @@ namespace GenZ.TestSuit
 
         // iOS: Apple's tracking prompt needs NSUserTrackingUsageDescription in Info.plist (iOS stops the app without it), and the
         // ios-support package copies every SKAdNetworks(.xml/.json) file in the project into Info.plist, sample ones included.
-        static void CheckIosBuild(ReportSection sec)
+        static void CheckIosBuild(ReportSection sec, IntegrationSettings s)
         {
+            CheckSkAdNetworkIds(sec, s);
+
             // Who shows the tracking prompt: game code, or MAX's own consent flow.
             string promptIn = null;
             foreach (var f in Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories).Select(Norm))
@@ -497,9 +499,55 @@ namespace GenZ.TestSuit
             }
         }
 
+        static readonly Regex PostProcessHook = new Regex(@"\[\s*(UnityEditor\.Callbacks\.)?PostProcessBuild(Attribute)?\b|\bIPostprocessBuildWithReport\b");
+
+        // iOS: every SKAdNetwork ID in config integration.skAdNetworkIds (networks no SDK adds, e.g. the MAX custom network Helix)
+        // must reach Info.plist: a build script that writes SKAdNetworkItems, Google's SKAdNetwork XML, or an SKAdNetworks file
+        // the ios-support package copies. Read from files only; the script's own #if UNITY_IOS doesn't matter here.
+        static void CheckSkAdNetworkIds(ReportSection sec, IntegrationSettings s)
+        {
+            var entries = (s.skAdNetworkIds ?? new string[0]).Where(e => !string.IsNullOrWhiteSpace(e)).ToList();
+            if (entries.Count == 0) return;
+
+            // Files that put SKAdNetwork IDs into Info.plist: path → text (comments blanked).
+            var sources = new List<KeyValuePair<string, string>>();
+            foreach (var f in Directory.GetFiles("Assets", "*.cs", SearchOption.AllDirectories).Select(Norm))
+            {
+                var code = StripComments(Read(f) ?? "");
+                if (code.IndexOf("SKAdNetworkItems", StringComparison.Ordinal) >= 0 && PostProcessHook.IsMatch(code))
+                    sources.Add(new KeyValuePair<string, string>(f, code));
+            }
+            foreach (var f in Directory.GetFiles("Assets", "GoogleMobileAdsSKAdNetworkItems.xml", SearchOption.AllDirectories).Select(Norm))
+                sources.Add(new KeyValuePair<string, string>(f, XmlComment.Replace(Read(f) ?? "", m => Regex.Replace(m.Value, "[^\n]", " "))));
+            if ((Read("Packages/manifest.json") ?? "").Contains("com.unity.ads.ios-support"))
+                foreach (var f in Directory.GetFiles("Assets", "SKAdNetworks*", SearchOption.AllDirectories).Select(Norm)
+                             .Where(f => { var n = Path.GetFileName(f); return n == "SKAdNetworks" || n == "SKAdNetworks.xml" || n == "SKAdNetworks.json"; }))
+                    sources.Add(new KeyValuePair<string, string>(f, Read(f) ?? ""));
+
+            foreach (var entry in entries)
+            {
+                var bar = entry.IndexOf('|');
+                var network = bar > 0 ? entry.Substring(0, bar).Trim() : "SKAdNetwork";
+                var ids = (bar > 0 ? entry.Substring(bar + 1) : entry).Split(',').Select(i => i.Trim()).Where(i => i.Length > 0);
+                foreach (var id in ids)
+                {
+                    var rx = new Regex(@"(?<![\w.])" + Regex.Escape(id) + @"(?![\w.])", RegexOptions.IgnoreCase);
+                    var hit = sources.Select(src => new { file = src.Key, text = src.Value, m = rx.Match(src.Value) }).FirstOrDefault(h => h.m.Success);
+                    if (hit != null)
+                        sec.Add($"SKAdNetwork ID · {network}", CheckStatus.Pass, id,
+                            $"Added to Info.plist's SKAdNetworkItems on iOS builds by {hit.file}", hit.file, LineAt(hit.text, hit.m.Index));
+                    else
+                        sec.Add($"SKAdNetwork ID · {network}", CheckStatus.Fail, "missing",
+                            $"{id} isn't added to Info.plist on iOS builds, so {network} installs can't be attributed (SKAdNetwork). "
+                            + "MAX only adds its own networks' IDs. Add a [PostProcessBuild] script that writes it into SKAdNetworkItems "
+                            + "(like AdsScripts-GenzAds/Editor/HelixSKAdNetwork.cs from GenZ Ads v1.33); no Xcode edit needed");
+                }
+            }
+        }
+
         // ================================================================= Gradle / manifest
 
-        static void CheckBuildSetup(ReportSection sec, string projectSettings)
+        static void CheckBuildSetup(ReportSection sec, string projectSettings, IntegrationSettings s)
         {
             var props = Read(GradleProperties);
             if (props != null && Regex.IsMatch(projectSettings, @"useCustomGradlePropertiesTemplate:\s*1"))
@@ -530,12 +578,55 @@ namespace GenZ.TestSuit
             }
 
             var manifest = Read(MainManifest);
-            if (manifest != null && Regex.IsMatch(projectSettings, @"useCustomMainManifest:\s*1"))
+            bool customManifest = manifest != null && Regex.IsMatch(projectSettings, @"useCustomMainManifest:\s*1");
+            if (customManifest)
             {
                 var dbg = Regex.Match(manifest, @"android:debuggable\s*=\s*""true""");
                 sec.Add("Manifest not debuggable", dbg.Success ? CheckStatus.Fail : CheckStatus.Pass, MainManifest,
                     dbg.Success ? "android:debuggable=\"true\" — Google Play rejects debuggable builds" : "No android:debuggable=\"true\"",
                     MainManifest, dbg.Success ? manifest.Substring(0, dbg.Index).Count(ch => ch == '\n') + 1 : 1);
+            }
+            CheckOptionalFeatures(sec, s, customManifest ? manifest : null);
+        }
+
+        static readonly Regex UsesFeatureTag = new Regex(@"<uses-feature\b([^>]*)>", RegexOptions.IgnoreCase);
+
+        // Every feature in config integration.optionalUsesFeatures must be in the custom manifest with android:required="false".
+        // A <uses-feature> without android:required counts as required (Android's default).
+        static void CheckOptionalFeatures(ReportSection sec, IntegrationSettings s, string manifest)
+        {
+            var names = (s.optionalUsesFeatures ?? new string[0]).Select(n => n?.Trim()).Where(n => !string.IsNullOrEmpty(n)).ToList();
+            if (names.Count == 0) return;
+            string Snippet(string n) => $"<uses-feature android:name=\"{n}\" android:required=\"false\" />";
+            if (manifest == null)
+            {
+                sec.Add("Optional hardware features", CheckStatus.Fail, "no custom manifest",
+                    $"Custom Main Manifest is off or {MainManifest} is missing, so the build has none of: {string.Join(", ", names)}. "
+                    + "Turn on Player Settings → Publishing Settings → Custom Main Manifest and add inside <manifest>: " + string.Join(" ", names.Select(Snippet)));
+                return;
+            }
+
+            var xml = XmlComment.Replace(manifest, m => Regex.Replace(m.Value, "[^\n]", " "));
+            var tags = UsesFeatureTag.Matches(xml).Cast<Match>()
+                .Select(m => new
+                {
+                    name = Regex.Match(m.Groups[1].Value, @"\bandroid:name\s*=\s*""([^""]*)""").Groups[1].Value.Trim(),
+                    required = Regex.Match(m.Groups[1].Value, @"\bandroid:required\s*=\s*""([^""]*)""").Groups[1].Value.Trim(),
+                    line = LineAt(xml, m.Index),
+                }).ToList();
+            foreach (var n in names)
+            {
+                var tag = tags.FirstOrDefault(t => string.Equals(t.name, n, StringComparison.OrdinalIgnoreCase));
+                if (tag == null)
+                    sec.Add($"Optional feature · {n}", CheckStatus.Fail, "missing",
+                        $"Not declared in the manifest: add {Snippet(n)} inside <manifest>, so Google Play doesn't filter out devices without it",
+                        MainManifest, 1);
+                else if (!string.Equals(tag.required, "false", StringComparison.OrdinalIgnoreCase))
+                    sec.Add($"Optional feature · {n}", CheckStatus.Fail, tag.required.Length == 0 ? "required (default)" : "required=" + tag.required,
+                        $"Declared as required{(tag.required.Length == 0 ? " (no android:required, which means true)" : "")}: Google Play hides the game from devices without it. "
+                        + "Set android:required=\"false\"", MainManifest, tag.line);
+                else
+                    sec.Add($"Optional feature · {n}", CheckStatus.Pass, "required=false", "Declared optional in the manifest", MainManifest, tag.line);
             }
         }
 
