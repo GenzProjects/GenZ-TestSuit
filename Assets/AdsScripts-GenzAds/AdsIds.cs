@@ -81,8 +81,4 @@ public class InAppKeys
     public ProductType Type;
     public bool removeads;
     public bool unLockAll;
-    public bool vip;
-    public bool solver;
-    public bool solver2;
-    public bool solver3;
 }
