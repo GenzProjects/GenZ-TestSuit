@@ -8,17 +8,17 @@ The **host/test project for the GenZ Test Suit** (`com.genz.testsuit`), the stud
 
 It is a stripped copy of the game "One Go Line Puzzle" (package `com.gps.onego.line.puzzle`, `bundleVersion` 2.71 / `AndroidBundleVersionCode` 41, Unity **6000.3.12f1** per `ProjectSettings/ProjectVersion.txt`). Only what the suite checks is kept: the SDKs, `Assets/AdsScripts-GenzAds/` (GenZ Ads, version in its `Release.txt`), and the scenes Consent → Splash → `Level_0`, `Level_3`, `Level_1`. Gameplay code (`GameManager`, `UiManager`, level order, splines input) is **not** in this repo.
 
-### Versions in development (since 2026-11-10)
+### Versions
 
-All current work targets **GenZ Ads v1.33** and **GenZ Test Suit 1.0.1** together:
-- Ads changes go in `Assets/AdsScripts-GenzAds/` and are listed under the v1.33 heading of its `Release.txt` (released: v1.32).
-- Suite changes go in the package and are listed under `## [1.0.1] - Unreleased` in `CHANGELOG.md` and the 1.0.1 entry of §10 in `Documentation~/GenZ-TestSuit.md` (released: 1.0.0 / GenZ-TestSuit-v1.0).
-- The release-time markers stay at 1.0 until the release steps below are run: `GenZTestSuitInfo.Version`, the `// GenZ-TestSuit-v…` first lines, `package.json`, and the README's `#v…` tag (that tag must point to a tag that exists). At release they become `1.0.1` / `GenZ-TestSuit-v1.0.1`.
+- **GenZ Ads v1.33**: in development (since 2026-11-10). Ads changes go in `Assets/AdsScripts-GenzAds/` and are listed under the v1.33 heading of its `Release.txt` (released: v1.32).
+- **GenZ Test Suit 1.0.1**: released 2026-11-20 as **GenZ-TestSuit-v1.0.1** (tag `v1.0.1`, GitHub release marked Latest; before it: 1.0.0 / GenZ-TestSuit-v1.0). All release markers are at 1.0.1: `GenZTestSuitInfo.Version`, the `// GenZ-TestSuit-v…` first lines, `package.json`, and the README's `#v1.0.1` tag.
+- **GenZ Test Suit 1.0.2**: in development (`## [1.0.2] - Unreleased` in `CHANGELOG.md`, config v13).
+- New suite changes go in the package under the `## [<next version>] - Unreleased` heading at the top of `CHANGELOG.md` and a matching entry in §10 of `Documentation~/GenZ-TestSuit.md`. The release markers stay at 1.0.1 until the release steps below are run (the README's `#v…` tag must always point to a tag that exists).
 - When a suite check depends on something new in v1.33 (a new `GenZLog` line, Remote Config key, ad script method), keep it working on v1.32 games too (plug and play), or make it a warning rather than a failure.
 
 ### Where the suite's code lives
 
-The suite is **not** in `Assets/`. It is a local UPM package in a sibling folder, its own git checkout (same `GenZ-TestSuit` remote, branch `main`, tags `v1.0.0`…):
+The suite is **not** in `Assets/`. It is a local UPM package in a sibling folder, its own git checkout (same `GenZ-TestSuit` remote, local branch `main`, tags `v1.0.0`, `v1.0.1`). The package's `main` reaches GitHub only through its tags: `origin/main` holds this host project, an unrelated history, so never pull or push `main` from the package folder:
 
 ```
 E:/GenzGitProjects/GenzTestSuitFolder/
@@ -26,7 +26,7 @@ E:/GenzGitProjects/GenzTestSuitFolder/
 └─ com.genz.testsuit/     ← the package: Editor/*.cs, Editor/Templates/, Documentation~/, CHANGELOG.md, README.md, package.json
 ```
 
-`Packages/manifest.json` links it with `"com.genz.testsuit": "file:../../com.genz.testsuit"`; games install it by git URL (`…/GenZ-TestSuit.git#v1.0.0`). Edits to the suite go in that package folder and are committed there, not here. This repo only holds what the package creates in a project:
+`Packages/manifest.json` links it with `"com.genz.testsuit": "file:../../com.genz.testsuit"`; games install it by git URL (`…/GenZ-TestSuit.git#v1.0.1`). Edits to the suite go in that package folder and are committed there, not here. This repo only holds what the package creates in a project:
 - `Assets/GenZ-TestSuit/GenZTestSuitConfig.asset`: the per-project config (rules, sheet tabs, deep-test settings). Committed.
 - `Assets/GenZ-DeepTest/`: the phone panel `GenZDeepTestPanel.cs`, copied from the package's `Editor/Templates/GenZDeepTestPanel.cs.txt` by Apply Test Environment, plus `Resources/GenZDeepTest.json` and `link.xml` while the Test Environment is on.
 
@@ -49,13 +49,13 @@ Full docs: `com.genz.testsuit/Documentation~/GenZ-TestSuit.md`. Keep it updated 
 
 ## Releasing the suite
 
-Release name **GenZ-TestSuit-v1.0** (package `1.0.0`), from `GenZTestSuitInfo.Version` in `Editor/GenZTestSuitConfig.cs`; shown in the window title, header and copied reports. The steps are in the package's `CHANGELOG.md`:
+Current release **GenZ-TestSuit-v1.0.1** (package `1.0.1`). The release name comes from `GenZTestSuitInfo.Version` in `Editor/GenZTestSuitConfig.cs`; shown in the window title, header and copied reports. The steps are in the package's `CHANGELOG.md`:
 1. Raise `GenZTestSuitInfo.Version`.
 2. Change the first line of every `Editor/*.cs` and of `Editor/Templates/GenZDeepTestPanel.cs.txt` to `// GenZ-TestSuit-v<version>` (projects detect an outdated panel by that line). New scripts must start with it too.
 3. Raise `version` in `package.json`.
 4. Add entries to `CHANGELOG.md` and the changelog (§10) of `Documentation~/GenZ-TestSuit.md`.
 5. Update the `#v…` tag in both install lines of `README.md`.
-6. Commit, `git tag v<package version>`, `git push origin main --tags`, then `gh release create v<ver> --title v<ver> --notes-file <notes.md> --latest`.
+6. Commit, `git tag v<package version>`, `git push origin v<package version>` (the tag only; see above about `main`), then `gh release create v<ver> --title v<ver> --notes-file <notes.md> --latest`.
 
 The release name is separate from the config asset's `configVersion` (`GenZTestSuitConfig.CurrentVersion`): raise that when config defaults change so existing config assets upgrade.
 
@@ -75,7 +75,7 @@ Every `CheckResult` has a `TestStage`; the step bar shows each step green/amber/
 
 **GenZ Ads version:** `GenZCodeChecks.DetectAdsVersion()` (files only: `// GenzMonetization-v…` lines → Release.txt → GenZLog/RemoteConfigManager present = 1.33 → else 1.32) decides how strict the v1.33 checks are: `NewIn133(c)` = Fail for a v1.33 project, Info for v1.32 (App Open skip on purchases/review clears, `requiredScriptsV133`, startup order, ConsentManager in the scene, missing version line). Shown in Environment ("GenZ Ads package") and step 4 ("Checked as"). v1.33 scene layout (this project's Splash = first build scene): every SDK object is separate and inactive (Ads = AdsManager/AdMob/AppOpen_Code/AdsIds/Analytics/LowMemory; FirebaseManager + RemoteConfigManager; UnityIAP = unityInApp; UmpManager; AdsGapTimer; FCM; Adjust/AppMetrica/GameAnalytics prefabs) and ConsentManager switches them on. So `CheckAdsObjectRule` also searches the SDK scenes (Pass for v1.33, Warn for v1.32) and `mustBeActive` passes for objects in ConsentManager's lists (`RunContext.startedByConsent`). APK: no `[GenZ]` lines in a session where the game ran = v1.32 build (`legacy` in `CheckSession`). New ad scripts must start with `// GenzMonetization-v1.33`.
 
-**Platforms:** the Editor run reads `EditorUserBuildSettings.activeBuildTarget`. iOS → `GenZIntegrationChecks.Run(…, ios: true)` skips google-services.json/Gradle/manifest (and Android Player Settings, signing) and checks `GoogleService-Info.plist` `BUNDLE_ID`, MAX adapters by `<iosPod>` (third part of `maxAdapters`/`forbiddenAdapters` entries), and `CheckIosBuild` (NSUserTrackingUsageDescription set when code calls `RequestAuthorizationTracking`; `SKAdNetworks*` sample files the ios-support package copies into Info.plist). `GenZCodeChecks.Run(…, ios)` makes platform-only code fail for the target's build and warn for the other. Rules run as `rule.For(ios)`: `FieldRule.iosFieldNames` / `iosPlatformName` (`adMobIOSAppId`, `adMobIosAppId`, GA `IPhonePlayer`) and "Android" → "iOS" in labels (also in `sameAs`); the ad scripts' field names are the same on both platforms. With the iOS target the window shows only the Editor tab (`IosTarget` in `GenZTestSuitWindow.cs`): the APK and Deep tabs are Android only (adb/logcat/APK) and hidden, by the user's choice for now; `CheckRelease(…, ios)` reports the Android test define as Info. Step 2 also has `CheckConsentManager` (scene: first build scene, screens/objects set, ad objects inactive, Firebase present, next scene not itself, every UnityEvent call resolves, Accept wired; a button fully covered by a later raycast target in the same Canvas can't be tapped (`CoveredBy`, no UGUI reference: `m_RaycastTarget` via SerializedObject), so its broken call is Info "hidden leftover" and a covered Accept button fails; store links use the same rule). The iOS studio project `E:/GenzGitProjects/IOS-SatisfyingColoringFolder/IOS-SatisfyingColoring` is a real iOS test case for the headless harness (pass `ios` / bundle `com.genz.drawing.coloring.page`).
+**Platforms:** the Editor run reads `EditorUserBuildSettings.activeBuildTarget`. iOS → `GenZIntegrationChecks.Run(…, ios: true)` skips google-services.json/Gradle/manifest (and Android Player Settings, signing) and checks `GoogleService-Info.plist` `BUNDLE_ID`, MAX adapters by `<iosPod>` (third part of `maxAdapters`/`forbiddenAdapters` entries), and `CheckIosBuild` (NSUserTrackingUsageDescription set when code calls `RequestAuthorizationTracking`; `SKAdNetworks*` sample files the ios-support package copies into Info.plist; every ID in `integration.skAdNetworkIds`, default Helix `tskbem2b5g.skadnetwork`, must be in a `[PostProcessBuild]` script writing `SKAdNetworkItems` such as `Assets/AdsScripts-GenzAds/Editor/HelixSKAdNetwork.cs`, in `GoogleMobileAdsSKAdNetworkItems.xml` or an SKAdNetworks file, else fail). `GenZCodeChecks.Run(…, ios)` makes platform-only code fail for the target's build and warn for the other. Rules run as `rule.For(ios)`: `FieldRule.iosFieldNames` / `iosPlatformName` (`adMobIOSAppId`, `adMobIosAppId`, GA `IPhonePlayer`) and "Android" → "iOS" in labels (also in `sameAs`); the ad scripts' field names are the same on both platforms. With the iOS target the window shows only the Editor tab (`IosTarget` in `GenZTestSuitWindow.cs`): the APK and Deep tabs are Android only (adb/logcat/APK) and hidden, by the user's choice for now; `CheckRelease(…, ios)` reports the Android test define as Info. Step 2 also has `CheckConsentManager` (scene: first build scene, screens/objects set, ad objects inactive, Firebase present, next scene not itself, every UnityEvent call resolves, Accept wired; a button fully covered by a later raycast target in the same Canvas can't be tapped (`CoveredBy`, no UGUI reference: `m_RaycastTarget` via SerializedObject), so its broken call is Info "hidden leftover" and a covered Accept button fails; store links use the same rule). The iOS studio project `E:/GenzGitProjects/IOS-SatisfyingColoringFolder/IOS-SatisfyingColoring` is a real iOS test case for the headless harness (pass `ios` / bundle `com.genz.drawing.coloring.page`).
 
 Rule targets: `AdsObject` (the 8 scripts on the Ads object in the SDK scene, default name `ADs`, case-insensitive), `SceneObject` (Adjust prefab with Production environment, AppMetrica `ApiKey` vs sheet column `AppMatrica`, GameAnalytics, AdsGapTimer, UmpManager active with `isTestMode` false), `Asset` (GameAnalytics `Settings.asset` by `Platforms` index with Send Version on; `GoogleMobileAdsSettings`; `AppLovinSettings` cross-checked with `sameAs`).
 
