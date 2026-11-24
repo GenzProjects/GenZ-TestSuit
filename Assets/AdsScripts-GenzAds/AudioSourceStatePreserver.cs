@@ -1,17 +1,22 @@
 // GenzMonetization-v1.33
+using System.Collections.Generic;
 using UnityEngine;
 
-[RequireComponent(typeof(AudioSource))]
+// Keeps every AudioSource in the loaded scenes playing correctly after an ad
+// (or any audio device reset) by restoring the state they had when the app paused.
+// iOS only: on other platforms the component compiles but does nothing, so scenes
+// and prefabs that use it never show a missing script.
 public class AudioSourceStatePreserver : MonoBehaviour
 {
-    private AudioSource _audioSource;
-    private bool _wasPlayingBeforeReset;
-    private float _savedTimeSample;
-
-    void Awake()
+#if UNITY_IOS
+    private struct AudioState
     {
-        _audioSource = GetComponent<AudioSource>();
+        public AudioSource source;
+        public bool wasPlaying;
+        public float savedTime;
     }
+
+    private readonly List<AudioState> _states = new List<AudioState>();
 
     void OnEnable()
     {
@@ -27,38 +32,53 @@ public class AudioSourceStatePreserver : MonoBehaviour
     // Zero CPU cost during normal gameplay!
     void OnApplicationPause(bool isPaused)
     {
-        if (_audioSource == null) return;
+        if (!isPaused) return;
 
-        if (isPaused)
+        // New cycle: this object lives in DontDestroyOnLoad, so the old list may hold
+        // sources from a previous scene. Reset it before taking the new snapshot.
+        _states.Clear();
+
+        // The ad just opened! Take a snapshot of every active AudioSource right now.
+        AudioSource[] sources = FindObjectsByType<AudioSource>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+        if (sources == null) return;
+
+        foreach (AudioSource source in sources)
         {
-            // The ad just opened! Take a snapshot of what is happening right now.
-            _wasPlayingBeforeReset = _audioSource.isPlaying;
-            
-            if (_wasPlayingBeforeReset && _audioSource.loop)
+            if (source == null) continue; // destroyed or missing: never touch it
+
+            bool playing = source.isPlaying;
+            _states.Add(new AudioState
             {
-                _savedTimeSample = _audioSource.time;
-            }
+                source = source,
+                wasPlaying = playing,
+                savedTime = (playing && source.loop) ? source.time : 0f
+            });
         }
     }
 
     private void OnAudioConfigChanged(bool deviceWasChanged)
     {
-        if (_audioSource == null) return;
-
-     
-        
-        if (_wasPlayingBeforeReset)
+        foreach (AudioState state in _states)
         {
-            if (_audioSource.loop && _audioSource.clip != null)
+            AudioSource source = state.source;
+            // Null check first (e.g. destroyed by a scene change), then skip switched-off ones.
+            if (source == null) continue;
+            if (!source.isActiveAndEnabled) continue;
+
+            if (state.wasPlaying)
             {
-                _audioSource.time = _savedTimeSample;
-            }
+                if (source.loop && source.clip != null && state.savedTime < source.clip.length)
+                {
+                    source.time = state.savedTime;
+                }
 
-            _audioSource.Play();
-        }
-        else
-        {
-            _audioSource.Stop();
+                source.Play();
+            }
+            else
+            {
+                source.Stop();
+            }
         }
     }
+#endif
 }
