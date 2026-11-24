@@ -1011,7 +1011,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: fd1cd63f76b6c6f4ca3b0f6228f552da, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  AppOpenId: ca-app-pub-9917171224118880/1815974775
+  AppOpenId: 
   screenOrientation: 1
 --- !u!114 &851040292
 MonoBehaviour:
@@ -1027,10 +1027,10 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   isPausedDuetoAd: 0
   maxSdkKey: RTBTCZ8AIR95WgA68ZT048wTn3IVHXE0TtQJK4n486yzzqHNiUxCxfLkJANThkPLEvF3dgxN8EP8Ze0a6iShXp
-  InterstitialAdUnitId: 638fc1b22690a05f
-  RewardedAdUnitId: b0eec59dd48bf2cf
-  BannerAdUnitId: 73ee47ba0ae71969
-  MRecAdUnitId: a5eeeacd2687d60b
+  InterstitialAdUnitId: 
+  RewardedAdUnitId: 
+  BannerAdUnitId: 
+  MRecAdUnitId: 
   bannerPosition: 7
   isBannerShowing: 0
   videWatchedFromMaxSdk: 1
@@ -1048,9 +1048,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   isTestIdOn: 0
-  bannerID: ca-app-pub-9917171224118880/8022290470
-  interstitialID: ca-app-pub-9917171224118880/6709208802
-  rewardID: ca-app-pub-9917171224118880/4353179211
+  bannerID: 
+  interstitialID: 
+  rewardID: 
   adPosition: 1
   callBackObject: {fileID: 0}
   _appOpen: {fileID: 851040291}
@@ -1071,42 +1071,22 @@ MonoBehaviour:
     Type: 0
     removeads: 0
     unLockAll: 0
-    vip: 1
-    solver: 0
-    solver2: 0
-    solver3: 0
   - Id: com.gps.onego.line.puzzle.removeads
     Type: 1
     removeads: 1
     unLockAll: 0
-    vip: 0
-    solver: 0
-    solver2: 0
-    solver3: 0
   - Id: com.gps.onego.line.puzzle.solver
     Type: 0
     removeads: 0
     unLockAll: 0
-    vip: 0
-    solver: 1
-    solver2: 0
-    solver3: 0
   - Id: com.gps.onego.line.puzzle.solver2
     Type: 0
     removeads: 0
     unLockAll: 0
-    vip: 0
-    solver: 0
-    solver2: 1
-    solver3: 0
   - Id: com.gps.onego.line.puzzle.solver3
     Type: 0
     removeads: 0
     unLockAll: 0
-    vip: 0
-    solver: 0
-    solver2: 0
-    solver3: 1
   inAppGameObject: {fileID: 0}
 --- !u!1 &1009735396
 GameObject:
@@ -1880,6 +1860,50 @@ MonoBehaviour:
   targetSceneBuildIndex: 1
   targetSceneName: 
   attPromptTimeout: 30
+--- !u!1 &1953464142
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1953464144}
+  - component: {fileID: 1953464143}
+  m_Layer: 0
+  m_Name: AudioStatePreserver
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1953464143
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1953464142}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0a84ec045d20a3d48822632bf59c3773, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::AudioSourceStatePreserver
+--- !u!4 &1953464144
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1953464142}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1965896020
 GameObject:
   m_ObjectHideFlags: 0
@@ -2041,3 +2065,4 @@ SceneRoots:
   - {fileID: 682188445}
   - {fileID: 851040285}
   - {fileID: 6077776691187414119}
+  - {fileID: 1953464144}
